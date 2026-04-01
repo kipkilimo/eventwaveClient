@@ -10,7 +10,7 @@
       <v-icon color="primary" class="mr-3" size="30">
         mdi-cloud-upload-outline
       </v-icon>
-      PDF Document Upload - {{ orgName }}
+      PDF Document Upload for {{ orgName }}({{ organizationId }})
     </v-card-title>
 
     <v-card-text class="text-medium-emphasis">
@@ -103,12 +103,7 @@ import axios from "axios";
 import { useOrganizationStore } from "@/stores/organization";
 
 // PROPS
-const props = defineProps({
-  organizationId: {
-    type: String,
-    required: true,
-  },
-});
+ 
 
 const emit = defineEmits(["upload-complete"]);
 
@@ -170,6 +165,7 @@ watch(file, () => {
   isUploadSuccessful.value = false;
 });
 
+  const organizationId = orgStore.currentOrganization?.id;
 // UPLOAD
 const uploadFile = async () => {
   if (!isFileValid.value) {
@@ -177,7 +173,7 @@ const uploadFile = async () => {
     return;
   }
 
-  if (!props.organizationId) {
+  if (!organizationId) {
     error.value = "Organization ID is missing.";
     return;
   }
@@ -194,7 +190,7 @@ const uploadFile = async () => {
       `${apiUrl}/api/auth/uploads`,
       formData,
       {
-        params: { orgId: props.organizationId },
+        params: { orgId: organizationId },
         onUploadProgress: (ev) => {
           if (ev.lengthComputable) {
             uploadProgress.value = Math.round(

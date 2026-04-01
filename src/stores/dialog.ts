@@ -143,7 +143,36 @@ export const useDialogStore = defineStore("dialog", {
         itemName,
       });
     },
+    // =========================
+    // EVENT MANAGEMENT (UI FLOW)
+    // =========================
 
+    openEventForm(event: EventType) {
+      this.open(DIALOG_NAMES.EVENT_FORM, {
+        event,
+      });
+    },
+
+    openEventView(event: EventType) {
+      this.open(DIALOG_NAMES.EVENT_VIEW, {
+        event,
+      });
+    },
+
+    openEventDelete(event) {
+      this.open(DIALOG_NAMES.EVENT_DELETE, {
+        event,
+      });
+    },
+
+    editEvent(event) {
+      // keeps compatibility with your existing helper usage
+      this.openEventForm(event);
+    },
+
+    deleteEvent(event) {
+      this.openEventDelete(event);
+    },
     closeConfirmDelete() {
       this.close(DIALOG_NAMES.CONFIRM_DELETE);
     },
@@ -155,7 +184,21 @@ export const useDialogStore = defineStore("dialog", {
     closeVoucher() {
       this.close(DIALOG_NAMES.VOUCHER);
     },
+    handleDialogClose(dialogName: DialogName | string) {
+      this.close(dialogName);
 
+      if (dialogName === DIALOG_NAMES.EVENT_FORM) {
+        // optionally clear external eventStore here if injected via composable layer
+      }
+
+      if (dialogName === DIALOG_NAMES.EVENT_VIEW) {
+        // same idea: keep UI state cleanup here if desired
+      }
+
+      if (dialogName === DIALOG_NAMES.EVENT_DELETE) {
+        // same idea
+      }
+    },
     closePayment() {
       this.close(DIALOG_NAMES.PAYMENT);
     },

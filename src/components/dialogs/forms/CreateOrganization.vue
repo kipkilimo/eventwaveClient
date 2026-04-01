@@ -1017,7 +1017,7 @@ const createOrganization = async (basePayload) => {
       maxParticipantsPerEvent: formData.maxParticipantsPerEvent || undefined,
     };
     const result = await orgStore.standardCreateOrganization(payload);
-    success.value = "Organization created successfully! Awaiting approval.";
+    success.value = "Organization created successfully! Awaiting legal verification.";
     return result;
   }
 };
@@ -1033,6 +1033,7 @@ const handleSuccess = async (createdOrganization) => {
   await userStore.refreshDashboard();
 
   if (orgStore.page && orgStore.limit) {
+    await orgStore.fetchMyOrganizations(userStore?.user?.id || "")
     await orgStore.fetchOrganizationsPaginated(orgStore.page, orgStore.limit);
   }
 

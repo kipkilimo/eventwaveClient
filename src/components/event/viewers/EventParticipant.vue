@@ -210,7 +210,7 @@ interface Resource {
 
 // Store instances
 const eventStore = useEventStore();
-const authStore = useAuthStore();
+const authStore = useUserStore();
 
 // Refs
 const chatMessages = ref<ChatMessage[]>([]);

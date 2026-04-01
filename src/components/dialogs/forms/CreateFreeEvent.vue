@@ -1,10 +1,5 @@
 <template>
-    <!-- <v-dialog
-    :model-value="dialogStore.isDialogOpen('eventCreateDialog')"
-    max-width="50rem"
-    persistent
-  >
-  </v-dialog> -->
+  <!-- Same template structure, but with optimizations -->
   <v-card class="event-card" elevation="10" max-width="50rem">
     <!-- CLOSE BUTTON -->
     <v-btn
@@ -61,7 +56,6 @@
           <v-stepper-item
             :value="1"
             :complete="step > 1"
-            :rules="[validateStep1]"
             :error="stepErrors.step1"
           >
             <template v-slot:title>
@@ -79,7 +73,6 @@
           <v-stepper-item
             :value="2"
             :complete="step > 2"
-            :rules="[validateStep2]"
             :error="stepErrors.step2"
           >
             <template v-slot:title>
@@ -98,7 +91,6 @@
 
           <v-stepper-item
             :value="3"
-            :rules="[validateStep3]"
             :error="stepErrors.step3"
           >
             <template v-slot:title>
@@ -427,6 +419,7 @@
                     placeholder="https://..."
                     :rules="[rules.url]"
                     hide-details="auto"
+                    @blur="validateUrlInBackground"
                   />
                 </v-col>
 
@@ -453,6 +446,7 @@
                     placeholder="https://..."
                     :rules="[rules.url]"
                     hide-details="auto"
+                    @blur="validateUrlInBackground"
                   />
                 </v-col>
               </v-row>
@@ -525,6 +519,7 @@
     </v-card-actions>
   </v-card>
 </template>
+
 <script setup>
 import { ref, computed, watch, onMounted } from "vue";
 import { useUserStore } from "@/stores/user";
@@ -532,22 +527,18 @@ import { useEventStore } from "@/stores/event";
 import { useDialogStore } from "@/stores/dialog";
 import { DateTime } from "luxon";
 import { useRouter } from "vue-router";
-import nlp from "compromise"; 
-// ✅ Correct way to import natural - using dynamic import to avoid build issues
-// We'll import it dynamically in the functions that need it
+import nlp from "compromise";
+
 let natural = null;
 
-// Helper function to load natural on demand
 const loadNatural = async () => {
   if (natural) return natural;
   try {
-    // Dynamic import with namespace to handle both default and named exports
     const naturalModule = await import("natural");
     natural = naturalModule.default || naturalModule;
     return natural;
   } catch (error) {
     console.error("Failed to load natural library:", error);
-    // Provide a fallback mock if needed
     natural = {
       TfIdf: class {
         addDocument() {}
@@ -568,7 +559,6 @@ const eventStore = useEventStore();
 const dialogStore = useDialogStore();
 
 // Refs
-// const formRef = ref(null);
 const isLoading = ref(false);
 const error = ref(null);
 const success = ref(null);
@@ -646,8 +636,8 @@ const interactivitySettings = [
 
 const MINUTES_BUFFER = 15;
 const MAX_TAGS = 10;
-const MAX_DURATION_MINUTES = 180; // 3 hours max
-const DEFAULT_DURATION_MINUTES = 120; // 2 hours default
+const MAX_DURATION_MINUTES = 180;
+const DEFAULT_DURATION_MINUTES = 120;
 
 // Stop words for tag generation
 const STOP_WORDS = new Set([
@@ -672,7 +662,41 @@ const STOP_WORDS = new Set([
   "with",
 ]);
 
-// Validation rules
+// Optimized URL validation - lightweight and non-blocking
+const isValidUrl = (url) => {
+  if (!url || typeof url !== 'string') return true;
+  
+  // Trim whitespace
+  url = url.trim();
+  
+  if (url === "") return true;
+  
+  try {
+    // Quick check for common URL patterns without regex
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      // Check for basic validity - this is fast and doesn't block
+      const urlObj = new URL(url);
+      return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
+    }
+    
+    // Check for common patterns without protocol
+    if (url.includes('.') && !url.includes(' ')) {
+      // Try to construct URL with https:// for validation
+      try {
+        new URL(`https://${url}`);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    
+    return false;
+  } catch {
+    return false;
+  }
+};
+
+// Validation rules with optimized URL validation
 const rules = {
   required: (v) => !!v?.trim() || "This field is required",
 
@@ -714,13 +738,21 @@ const rules = {
     return true;
   },
 
+  // Optimized URL validation - synchronous and fast
   url: (v) => {
     if (!v) return true;
-    const urlPattern =
-      /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/;
-    if (!urlPattern.test(v)) return "Please enter a valid URL";
-    return true;
+    const isValid = isValidUrl(v);
+    return isValid || "Please enter a valid URL (e.g., https://example.com)";
   },
+};
+
+// Background URL validation for user feedback (optional)
+const validateUrlInBackground = async (event) => {
+  const url = event?.target?.value;
+  if (url && !isValidUrl(url)) {
+    // Optionally show a non-blocking toast notification
+    console.log('Invalid URL detected:', url);
+  }
 };
 
 // Default date calculations
@@ -737,7 +769,6 @@ const getAdjustedEndDateTime = (
 ) => {
   if (!startDateTime) return "";
   const start = DateTime.fromISO(startDateTime);
-  // Ensure duration doesn't exceed max
   const duration = Math.min(targetDurationMinutes, MAX_DURATION_MINUTES);
   const end = start.plus({ minutes: duration });
   return end.toISO({ includeOffset: false });
@@ -755,12 +786,12 @@ const initializeForm = () => ({
     DEFAULT_DURATION_MINUTES,
   ),
   location: {
-    venue: "", // Changed to match MongoDB schema
+    venue: "",
     address: "",
     virtualLink: "",
     isVirtual: false,
   },
-  capacity: 50, // Default to max 50
+  capacity: 50,
   tags: [],
   interactivity: {
     allowChat: true,
@@ -791,14 +822,11 @@ const form = ref(initializeForm());
 const handleStartDateTimeChange = (newStart) => {
   if (!newStart) return;
 
-  // Auto-update end time to 2 hours after start
   const start = DateTime.fromISO(newStart);
   const newEnd = start.plus({ minutes: DEFAULT_DURATION_MINUTES });
 
-  // Check if the new end time would exceed max duration
   const duration = newEnd.diff(start, "minutes").minutes;
   if (duration > MAX_DURATION_MINUTES) {
-    // Cap at max duration if needed (shouldn't happen with 2 hours < 3 hours)
     form.value.end = start
       .plus({ minutes: MAX_DURATION_MINUTES })
       .toISO({ includeOffset: false });
@@ -815,7 +843,6 @@ const handleEndDateTimeChange = (newEnd) => {
   const end = DateTime.fromISO(newEnd);
   const duration = end.diff(start, "minutes").minutes;
 
-  // If duration exceeds max, auto-adjust end time
   if (duration > MAX_DURATION_MINUTES) {
     const adjustedEnd = start.plus({ minutes: MAX_DURATION_MINUTES });
     form.value.end = adjustedEnd.toISO({ includeOffset: false });
@@ -823,7 +850,6 @@ const handleEndDateTimeChange = (newEnd) => {
 };
 
 // Updated generateTags function using dynamic import
-// Updated generateTags function using NLP libraries but outputting simple single-word tags
 const generateTags = async () => {
   const text =
     `${form.value.title || ""} ${form.value.description || ""}`.trim();
@@ -833,7 +859,6 @@ const generateTags = async () => {
     return;
   }
 
-  // Normalize once
   const clean = text.toLowerCase();
 
   // -------------------------------
@@ -845,7 +870,6 @@ const generateTags = async () => {
   const adjectives = doc.adjectives().out("array");
   const verbs = doc.verbs().out("array");
 
-  // Combine + normalize
   const rawWords = [...nouns, ...adjectives, ...verbs];
 
   // -------------------------------
@@ -908,7 +932,6 @@ const generateTags = async () => {
     const scored = words.map((word) => {
       let score = tfidf.tfidf(word, 0);
 
-      // POS boosting (faster lookup)
       if (nounSet.has(word)) score *= 1.3;
       else if (adjSet.has(word)) score *= 1.1;
 
@@ -936,13 +959,12 @@ const generateTags = async () => {
   }
 };
 
-// -------------------------------
 // Reusable fallback helper
-// -------------------------------
 const fallbackTags = (existing = []) => {
   const defaults = ["workshop", "training", "event", "learning", "meeting"];
   return defaults.filter((tag) => !existing.includes(tag)).slice(0, 5);
 };
+
 // Remove tag
 const removeTag = (tagToRemove) => {
   generatedTags.value = generatedTags.value.filter(
@@ -951,14 +973,12 @@ const removeTag = (tagToRemove) => {
 };
 
 // Computed properties
-
 const minStartDateTime = computed(() => {
   const now = DateTime.now().plus({ minutes: MINUTES_BUFFER });
   return now.toISO({ includeOffset: false });
 });
 
 const maxStartDateTime = computed(() => {
-  // Max start date is 3 months from now
   const max = DateTime.now().plus({ months: 3 });
   return max.toISO({ includeOffset: false });
 });
@@ -1049,22 +1069,18 @@ const createNewEvent = async () => {
   isLoading.value = true;
 
   try {
-    // Parse dates and format them as ISO strings for the server
     let startDateTime = DateTime.fromISO(form.value.start);
     let endDateTime = DateTime.fromISO(form.value.end);
 
-    // Validate dates
     if (!startDateTime.isValid || !endDateTime.isValid) {
       throw new Error("Invalid date format");
     }
 
-    // Apply 3-hour limit if needed
     const durationMinutes = endDateTime.diff(startDateTime, "minutes").minutes;
     if (durationMinutes > MAX_DURATION_MINUTES) {
       endDateTime = startDateTime.plus({ minutes: MAX_DURATION_MINUTES });
     }
 
-    // Prepare payload matching CreateFreeEventInput schema
     const payload = {
       title: form.value.title.trim(),
       description: form.value.description?.trim() || null,
@@ -1073,7 +1089,7 @@ const createNewEvent = async () => {
       start: startDateTime.toISO(),
       end: endDateTime.toISO(),
       location: {
-        name: form.value.location.venue, // Map venue to name for GraphQL
+        name: form.value.location.venue,
         address: form.value.location.address,
         virtualLink: form.value.location.virtualLink?.trim() || null,
         isVirtual: form.value.location.isVirtual,
@@ -1092,7 +1108,6 @@ const createNewEvent = async () => {
       },
     };
 
-    // Clean up null/undefined values
     Object.keys(payload).forEach((key) => {
       if (payload[key] === null || payload[key] === undefined) {
         delete payload[key];
@@ -1113,20 +1128,14 @@ const createNewEvent = async () => {
       !payload.branding.bannerBg
     )
       delete payload.branding;
-
-    console.log("Creating event with formatted payload:", payload);
-
-    // Call the store action
-    const result = await eventStore.createFreeEvent(payload);
-
-    console.log("Event created successfully:", result);
+ await eventStore.createFreeEvent(payload);
 
     success.value = "Event created successfully!";
 
     setTimeout(async () => {
       dialogStore.close();
       await userStore.refreshDashboard();
-      router.push("/");
+      router.go("/dashboard");
     }, 1500);
   } catch (err) {
     console.error("Event creation error:", err);

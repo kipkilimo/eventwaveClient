@@ -1,3 +1,658 @@
+<template>
+  <v-container fluid class="pa-sm-2 fill-width">
+    <!-- Loading Indicator -->
+    <v-progress-linear
+      color="primary-darken-2"
+      indeterminate
+      v-if="loadingCurrent"
+    ></v-progress-linear>
+
+    <!-- Organizations Grid -->
+    <v-row dense v-if="showOrgs">
+      <v-col
+        v-for="org in orgStore.organizations.slice(0, 6)"
+        :key="org.id"
+        cols="12"
+        sm="6"
+        md="4"
+        lg="3"
+        class="d-flex"
+      >
+        <v-card
+          elevation="2"
+          class="flex-grow-1 organization-card"
+          @click="activateOrg(org)"
+          :class="{ 'selected-org': isSelected(org) }"
+          hover
+          ripple
+        >
+          <v-card-text class="pa-3">
+            <div class="d-flex justify-space-between align-start mb-2">
+              <div class="org-header">
+                <div class="text-h6 font-weight-bold text-truncate">
+                  {{ org.name }}
+                </div>
+                <div class="text-caption text-grey">
+                  {{ org.orgType || "N/A" }} | Events :
+                  {{ org.events?.length || 0 }} | Users:
+                  {{ org.users?.length || 0 }} | Created:
+                  {{ formatDate(org.createdAt) }}
+                </div>
+              </div>
+              <v-chip
+                size="small"
+                color="indigo-lighten-4"
+                class="text-indigo ml-2 org-tier-chip"
+                variant="outlined"
+                rounded="sm"
+              >
+                {{ org.subscriptionTier || "FREE" }}
+              </v-chip>
+            </div>
+          </v-card-text>
+          <v-divider />
+          <v-card-actions class="pt-0 pa-2">
+            <v-spacer />
+            <v-btn
+              v-if="org.orgLegalDocuments?.length < 5"
+              size="small"
+              color="secondary"
+              variant="outlined"
+              prepend-icon="mdi-paperclip-check"
+              @click.stop="uploadMedia(org)"
+              :class="{ 'mobile-btn': $vuetify.display.mobile }"
+            >
+              Legal
+            </v-btn>
+            <v-btn
+              size="small"
+              color="primary"
+              variant="outlined"
+              prepend-icon="mdi-wrench-cog-outline"
+              @click.stop="manageOrg(org)"
+              :class="{ 'mobile-btn': $vuetify.display.mobile }"
+            >
+              Manage
+            </v-btn>
+            <v-btn
+              size="small"
+              color="success"
+              variant="outlined"
+              prepend-icon="mdi-ticket-percent-outline"
+              @click.stop="getVoucher(org)"
+              :class="{ 'mobile-btn': $vuetify.display.mobile }"
+            >
+              Voucher
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
+    </v-row>
+
+    <!-- HEADER SECTION -->
+    <v-card class="mb-1 mt-2 mb-sm-3">
+      <v-card-text class="pa-2">
+        <v-row align="center" class="flex-column flex-sm-row">
+          <v-col cols="12" sm="4" class="text-center text-sm-start">
+            <div class="d-flex align-center justify-center justify-sm-start">
+              <v-icon
+                icon="mdi-calendar-multiple"
+                size="32"
+                class="mr-3 text-primary"
+              ></v-icon>
+              <div>
+                <h1 class="text-h4 text-h5-sm font-weight-bold text-primary">
+                  Event Management
+                </h1>
+                <p class="text-grey mb-0 text-caption text-body-2-sm">
+                  Manage all events, facilitators, and schedules
+                </p>
+              </div>
+            </div>
+          </v-col>
+          <v-row no-gutters>
+            <!-- My Organizations -->
+            <v-col cols="12" sm="4" class="text-center text-sm-start">
+              <v-tooltip location="top">
+                <template #activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    variant="tonal"
+                    class="mr-4"
+                    prepend-icon="mdi-bank"
+                    @click="toggleViewOrgs"
+                    size="large"  
+                    :class="{ 'mobile-full-width': $vuetify.display.mobile }"
+                  >
+                    My Organizations ({{ orgStore.organizations.length }})
+                  </v-btn>
+                </template>
+                <span>Manage organizations and their members</span>
+              </v-tooltip>
+            </v-col>
+            <!-- Refresh -->
+            <v-col cols="12" sm="4" class="text-center">
+              <v-btn
+                variant="tonal"
+                prepend-icon="mdi-refresh"
+                @click="loadEvents"
+                size="large"
+                :loading="loading"  
+                :class="{ 'mobile-full-width': $vuetify.display.mobile }"
+              >
+                Refresh all
+              </v-btn>
+            </v-col>
+          </v-row>
+          <v-col cols="12" sm="4" class="text-center text-sm-end">
+            <v-btn
+              variant="tonal"
+              color="#850a85"
+              @click="openCreateOrganization"
+              size="large"
+              prepend-icon="mdi-bank-plus"
+              class="flex-grow-1"
+              block
+              :class="{ 'mobile-full-width': $vuetify.display.mobile }"
+            >
+              Add Organization
+            </v-btn>
+          </v-col>
+        </v-row>
+      </v-card-text>
+    </v-card>
+
+    <!-- FILTERS CARD -->
+    <v-card class="mb-4 mb-sm-6">
+      <v-card-text class="pa-3 pa-sm-4">
+        <v-row dense>
+          <v-col cols="12" sm="6" md="4" class="pb-2">
+            <v-text-field
+              v-model="search"
+              label="Search events..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              density="compact"
+              clearable
+              hide-details
+              class="mobile-full-width"
+            ></v-text-field>
+          </v-col>
+          <v-col cols="12" sm="6" md="2" class="pb-2">
+            <v-select
+              v-model="filters.status"
+              :items="statusOptions"
+              label="Status"
+              variant="outlined"
+              density="compact"
+              clearable
+              hide-details
+              class="mobile-full-width"
+            ></v-select>
+          </v-col>
+          <v-col cols="12" sm="6" md="2" class="pb-2">
+            <v-select
+              v-model="filters.sortBy"
+              :items="sortOptions"
+              label="Sort By"
+              variant="outlined"
+              density="compact"
+              hide-details
+              class="mobile-full-width"
+            ></v-select>
+          </v-col>
+          <v-col cols="12" sm="6" md="4" class="pb-2">
+            <div class="d-flex flex-wrap gap-2 w-100">
+              <v-btn
+                variant="outlined"
+                prepend-icon="mdi-refresh"
+                @click="loadEvents"
+                size="small"
+                :loading="loading"
+                class="flex-grow-1"
+                block
+                :class="{ 'mobile-full-width': $vuetify.display.mobile }"
+              >
+                <span class="d-none d-sm-inline">My Events ({{ eventStore.events.length }})</span>
+                <span class="d-sm-none">Refresh Events</span>
+              </v-btn>
+              <v-btn
+                variant="tonal"
+                prepend-icon="mdi-filter-variant"
+                @click="showAdvancedFilters = !showAdvancedFilters"
+                size="small"
+                class="flex-grow-1"
+                block
+                :class="{ 'mobile-full-width': $vuetify.display.mobile }"
+              >
+                <span class="d-none d-sm-inline">More Filters</span>
+                <span class="d-sm-none">Filters</span>
+              </v-btn>
+            </div>
+          </v-col>
+        </v-row>
+
+        <!-- Advanced Filters -->
+        <v-expand-transition>
+          <div v-if="showAdvancedFilters" class="mt-3">
+            <v-row dense>
+              <v-col cols="12" sm="6" md="3" class="pb-2">
+                <v-menu>
+                  <template v-slot:activator="{ props }">
+                    <v-text-field
+                      v-model="filters.createdAfter"
+                      label="Created After"
+                      variant="outlined"
+                      density="compact"
+                      readonly
+                      v-bind="props"
+                      hide-details
+                      class="mobile-full-width"
+                    ></v-text-field>
+                  </template>
+                  <v-date-picker v-model="filters.createdAfter"></v-date-picker>
+                </v-menu>
+              </v-col>
+              <v-col cols="12" sm="6" md="3" class="pb-2">
+                <v-menu>
+                  <template v-slot:activator="{ props }">
+                    <v-text-field
+                      v-model="filters.createdBefore"
+                      label="Created Before"
+                      variant="outlined"
+                      density="compact"
+                      readonly
+                      v-bind="props"
+                      hide-details
+                      class="mobile-full-width"
+                    ></v-text-field>
+                  </template>
+                  <v-date-picker
+                    v-model="filters.createdBefore"
+                  ></v-date-picker>
+                </v-menu>
+              </v-col>
+            </v-row>
+          </div>
+        </v-expand-transition>
+      </v-card-text>
+    </v-card>
+
+    <!-- EVENTS TABLE -->
+    <v-card class="mt-2">
+      <v-card-title class="d-flex align-center pa-3 pa-sm-4">
+        <v-icon icon="mdi-calendar-multiple" class="mr-2"></v-icon>
+        <span class="text-h6 font-weight-medium">
+          Events ({{ eventStore.events.length }})
+        </span>
+        <v-spacer></v-spacer>
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-download"
+          @click="exportEvents"
+          class="d-none d-sm-flex"
+        >
+          Export
+        </v-btn>
+        <v-btn
+          icon
+          variant="text"
+          size="small"
+          @click="exportEvents"
+          class="d-sm-none"
+        >
+          <v-icon>mdi-download</v-icon>
+        </v-btn>
+      </v-card-title>
+
+      <v-divider></v-divider>
+
+      <!-- Mobile Cards View -->
+      <div class="d-block d-sm-none pa-3">
+        <div v-if="loading" class="py-8 text-center">
+          <v-progress-circular
+            indeterminate
+            color="primary"
+          ></v-progress-circular>
+        </div>
+        <div
+          v-else-if="eventStore.events.length === 0"
+          class="py-8 text-center"
+        >
+          <v-icon size="64" class="mb-2 text-grey-lighten-1"
+            >mdi-calendar-remove</v-icon
+          >
+          <div class="text-h6 text-grey">No events found</div>
+          <div class="text-grey mt-1">
+            Create your first event to get started
+          </div>
+        </div>
+        <v-card
+          v-for="event in eventStore.events"
+          :key="event.id"
+          class="mb-3 event-card-mobile"
+          :class="getRowClass(event, eventStore.events.indexOf(event))"
+          @click="setActiveEvent(event)"
+        >
+          <v-card-text class="pa-3">
+            <div class="d-flex justify-space-between align-start">
+              <div>
+                <div class="d-flex align-center mb-1">
+                  <v-icon
+                    :icon="getStatusIcon(event.status)"
+                    :color="getStatusColor(event.status)"
+                    size="small"
+                    class="mr-2"
+                  ></v-icon>
+                  <div class="text-body-1 font-weight-medium">
+                    {{ event.title }}
+                  </div>
+                </div>
+                <div class="text-caption text-grey mb-1">
+                  Key: {{ event.eventSecret }}
+                </div>
+              </div>
+              <v-chip
+                :color="getChipStatusColor(isActive(event))"
+                variant="flat"
+                size="small"
+                class="text-capitalize"
+                :class="{ 'active-event-chip': isActive(event) }"
+              >
+                {{ event.status.toLowerCase() }}
+                <span v-if="isActive(event)" class="ml-1">(Active)</span>
+              </v-chip>
+            </div>
+
+            <v-divider class="my-2"></v-divider>
+
+            <div class="mobile-event-details">
+              <div class="detail-row">
+                <v-icon size="small" class="mr-2 text-grey">mdi-account</v-icon>
+                <span class="text-caption">{{
+                  event.organizer?.name || "N/A"
+                }}</span>
+              </div>
+              <div class="detail-row">
+                <v-icon size="small" class="mr-2 text-grey"
+                  >mdi-account-group</v-icon
+                >
+                <span class="text-caption">
+                  {{ event.facilitators?.length || 0 }} facilitators
+                </span>
+              </div>
+              <div class="detail-row">
+                <v-icon size="small" class="mr-2 text-grey"
+                  >mdi-calendar-clock</v-icon
+                >
+                <span class="text-caption">
+                  {{ getEventTimingStatus(event).text }}
+                </span>
+              </div>
+            </div>
+
+            <v-divider class="my-2"></v-divider>
+
+            <div class="d-flex justify-end gap-1">
+              <v-btn
+                icon
+                size="small"
+                variant="text"
+                color="info"
+                @click.stop="viewEvent(event)"
+              >
+                <v-icon>mdi-tools</v-icon>
+              </v-btn>
+              <v-btn
+                icon
+                size="small"
+                variant="text"
+                color="primary"
+                @click.stop="editEvent(event)"
+              >
+                <v-icon>mdi-text-box-edit-outline</v-icon>
+              </v-btn>
+              <v-btn
+                icon
+                size="small"
+                variant="text"
+                color="error"
+                @click.stop="deleteEvent(event)"
+              >
+                <v-icon>mdi-close-network-outline</v-icon>
+              </v-btn>
+            </div>
+          </v-card-text>
+        </v-card>
+      </div>
+
+      <!-- Desktop Table View -->
+      <v-data-table
+        class="d-none d-sm-block"
+        style="height: calc(100vh - 36vh); overflow-y: auto"
+        :headers="headers"
+        :items="eventStore.events"
+        :search="search"
+        :loading="loading"
+        :items-per-page="pagination.itemsPerPage"
+        :page="pagination.page"
+        :item-class="(item: any, index: number) => getRowClass(item, index)"
+        density="comfortable"
+        item-value="id"
+      >
+        <!-- Loading State -->
+        <template v-slot:loading>
+          <v-skeleton-loader type="table-row@10"></v-skeleton-loader>
+        </template>
+
+        <!-- No Data State -->
+        <template v-slot:no-data>
+          <div class="py-8 text-center">
+            <v-icon size="64" class="mb-2 text-grey-lighten-1"
+              >mdi-calendar-remove</v-icon
+            >
+            <div class="text-h6 text-grey">No events found</div>
+            <div class="text-grey mt-1">
+              Create your first event to get started
+            </div>
+          </div>
+        </template>
+
+        <!-- Event Title Column -->
+        <template v-slot:item.title="{ item }">
+          <div class="d-flex align-center">
+            <v-icon
+              :icon="getStatusIcon(item.status)"
+              :color="getStatusColor(item.status)"
+              size="small"
+              class="mr-2"
+            ></v-icon>
+            <div>
+              <div class="font-weight-medium text-body-2">{{ item.title }}</div>
+              <div class="text-caption text-grey">
+                Key: {{ item.eventSecret }}
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Organizer Column -->
+        <template v-slot:item.organizer="{ item }">
+          <div class="d-flex align-center">
+            <span class="text-body-2">{{ item.organizer?.name || "N/A" }}</span>
+          </div>
+        </template>
+
+        <!-- Facilitators Column -->
+        <template v-slot:item.facilitators="{ item }">
+          <div v-if="item.facilitators?.length">
+            <v-chip
+              v-for="facilitator in item.facilitators.slice(0, 2)"
+              :key="facilitator.id"
+              size="small"
+              variant="outlined"
+              class="mr-1 mb-1"
+            >
+              {{ facilitator.name }}
+            </v-chip>
+            <v-chip
+              v-if="item.facilitators.length > 2"
+              size="small"
+              variant="tonal"
+              color="grey"
+            >
+              +{{ item.facilitators.length - 2 }} more
+            </v-chip>
+          </div>
+          <span v-else class="text-grey text-caption">No facilitators</span>
+        </template>
+
+        <!-- Status Column - Updated with active indicator -->
+        <template v-slot:item.status="{ item }">
+          <v-chip
+            :color="getChipStatusColor(isActive(item))"
+            variant="flat"
+            size="small"
+            class="text-capitalize"
+            @click="setActiveEvent(item)"
+            :class="{ 'active-event-chip': isActive(item) }"
+          >
+            {{ item.status.toLowerCase() }}
+            <span v-if="isActive(item)" class="ml-1">(Active)</span>
+          </v-chip>
+        </template>
+
+        <!-- Timing Column -->
+        <template v-slot:item.timing="{ item }">
+          <div class="text-body-2">
+            <div>
+              {{ formatDateTime(item.dateTime.start) }}
+              <v-chip
+                :color="getEventTimingStatus(item).color"
+                variant="flat"
+                size="x-small"
+                class="mt-0"
+              >
+                {{ getEventDuration(item) }} |
+                {{ getEventTimingStatus(item).text }}
+              </v-chip>
+            </div>
+          </div>
+        </template>
+
+        <!-- Actions Column -->
+        <template v-slot:item.actions="{ item }">
+          <div class="d-flex justify-end gap-1">
+            <v-tooltip location="top">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  icon
+                  size="small"
+                  variant="text"
+                  color="info"
+                  @click="dialogStore.open(DIALOG_NAMES.EVENT_VIEW, { item });"
+                >
+                  <v-icon>mdi-tools</v-icon>
+                </v-btn>
+              </template>
+              <span>Set Current & Manage Event</span>
+            </v-tooltip>
+
+            <v-tooltip location="top">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  icon
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  @click="editEvent(item)"
+                >
+                  <v-icon>mdi-text-box-edit-outline</v-icon>
+                </v-btn>
+              </template>
+              <span>Edit Event</span>
+            </v-tooltip>
+
+            <v-tooltip location="top">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  icon
+                  size="small"
+                  variant="text"
+                  color="error"
+                  @click="deleteEvent(item)"
+                >
+                  <v-icon>mdi-close-network-outline</v-icon>
+                </v-btn>
+              </template>
+              <span>Cancel Event</span>
+            </v-tooltip>
+          </div>
+        </template>
+
+        <!-- Custom Footer with Pagination -->
+        <template v-slot:bottom>
+          <div class="d-flex align-center pa-3 table-footer">
+            <span class="text-caption text-grey">
+              Showing
+              {{ Math.min(eventStore.events.length, pagination.itemsPerPage) }}
+              of {{ eventStore.events.length }} events
+            </span>
+            <v-spacer></v-spacer>
+            <v-pagination
+              v-model="pagination.page"
+              :length="
+                Math.ceil(eventStore.events.length / pagination.itemsPerPage)
+              "
+              density="comfortable"
+              class="table-pagination"
+            ></v-pagination>
+          </div>
+        </template>
+      </v-data-table>
+    </v-card>
+
+    <!-- DIALOGS -->
+    <v-dialog v-model="showCreateOrganization" max-width="630" persistent>
+      <CreateOrganization />
+    </v-dialog>
+    
+    <v-dialog v-model="showLegalDocs" max-width="630" persistent>
+      <LegalDocs />
+    </v-dialog>
+    
+    <v-dialog v-model="showOrgDetails" max-width="630">
+      <OrgDetails />
+    </v-dialog>
+    
+    <v-dialog v-model="showVoucherDialog" width="66rem">
+      <ProGenerateVoucher />
+    </v-dialog>
+    
+    <v-dialog v-model="showEventForm" max-width="800" persistent>
+      <EventFormDialog
+        @saved="handleFormSaved"
+        @cancel="handleDialogClose(DIALOG_NAMES.EVENT_FORM)"
+      />
+    </v-dialog>
+
+    <v-dialog v-model="showEventView" max-width="75%" persistent>
+      <EventViewDialog @close="handleDialogClose(DIALOG_NAMES.EVENT_VIEW)" />
+    </v-dialog>
+
+    <v-dialog v-model="showEventDelete" max-width="500" persistent>
+      <EventDeleteDialog
+        @confirmed="handleDeleteConfirmed"
+        @cancel="handleDialogClose(DIALOG_NAMES.EVENT_DELETE)"
+      />
+    </v-dialog>
+  </v-container>
+</template>
+
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive, watch } from "vue";
 
@@ -18,7 +673,6 @@ import CreateOrganization from "@/components/dialogs/forms/CreateOrganization.vu
 import LegalDocs from "@/components/dialogs/uploads/pdf/LegalDocs.vue";
 import OrgDetails from "@/components/dialogs/details/OrgDetails.vue";
 import ProGenerateVoucher from "@/components/dialogs/payments/EventVoucherRedeem.vue";
-import ManageEvent from "@/components/dialogs/event/ManageEvent.vue";
 
 // -------------------------------------------------------
 // TYPES
@@ -83,8 +737,10 @@ const filters = reactive({
   createdBefore: null as string | null,
 });
 
+// Updated getRowClass to include active class
 const getRowClass = (item: any, index: number) => {
-  return index % 2 === 0 ? "even-row" : "odd-row";
+  const baseClass = index % 2 === 0 ? "even-row" : "odd-row";
+  return isActive(item) ? `${baseClass} active-row` : baseClass;
 };
 
 const activeRow = ref<EventType | null>(null);
@@ -152,12 +808,7 @@ const showOrgDetails = computed({
   },
 });
 
-const showManageEvent = computed({
-  get: () => eventStore.managingEvent,
-  set: (val) => {
-    if (!val) eventStore.managingEvent = false;
-  },
-});
+// Removed showManageEvent - now using dialogStore
 
 // -------------------------------------------------------
 // FILTER OPTIONS
@@ -200,6 +851,7 @@ onMounted(async () => {
   try {
     await resetAllStores();
     await userStore.refreshDashboard();
+    await loadEvents();
     eventStore.currentEvent = eventStore.events[0] || null;
     activeRow.value = eventStore.currentEvent;
   } catch (err) {
@@ -208,25 +860,39 @@ onMounted(async () => {
 });
 
 // -------------------------------------------------------
-// EVENT ACTIONS
+// EVENT ACTIONS - UPDATED
 // -------------------------------------------------------
+
+// Updated viewEvent to use dialogStore
 const viewEvent = async (event: EventType) => {
-  await eventStore.fetcheventBySecret(event?.eventSecret || "");
-  eventStore.managingEvent = true;
+  await eventStore.fetchEventBySecret(event?.eventSecret || "");
+  // Use dialogStore instead of eventStore.managingEvent
+  //dialogStore.open(DIALOG_NAMES.EVENT_VIEW, { event });
 };
 
 const getChipStatusColor = (active: boolean) => {
   return active ? "success" : "grey-lighten-4";
 };
 
+// Updated setActiveEvent to properly set the current event and show management dialog
 const setActiveEvent = async (eventRow: EventType) => {
   loadingCurrent.value = true;
   console.log("Set active event:", eventRow);
-  if (!eventRow?.eventSecret) return;
+  
+  if (!eventRow?.eventSecret) {
+    loadingCurrent.value = false;
+    return;
+  }
 
   await resetAllStores();
-  await eventStore.fetcheventBySecret(eventRow.eventSecret);
+  await eventStore.fetchEventBySecret(eventRow.eventSecret);
   activeRow.value = eventStore.currentEvent;
+  
+  // Open the manage event dialog after setting active event
+  // if (eventStore.currentEvent) {
+  //   dialogStore.open(DIALOG_NAMES.EVENT_VIEW, { event: eventStore.currentEvent });
+  // }
+  
   loadingCurrent.value = false;
 };
 
@@ -242,21 +908,36 @@ const deleteEvent = (event: EventType) => {
 
 function handleDialogClose(dialogName: string) {
   dialogStore.close(dialogName);
-  if (dialogName === DIALOG_NAMES.EVENT_FORM) eventStore.setEditingEvent(null);
-  if (dialogName === DIALOG_NAMES.EVENT_VIEW) eventStore.setViewingEvent(null);
-  if (dialogName === DIALOG_NAMES.EVENT_DELETE) eventStore.setDeletingEvent(null);
+  if (dialogName === DIALOG_NAMES.EVENT_FORM) {
+    eventStore.setEditingEvent(null);
+  }
+  if (dialogName === DIALOG_NAMES.EVENT_VIEW) {
+    eventStore.setViewingEvent(null);
+    // Don't clear activeRow when closing view dialog
+  }
+  if (dialogName === DIALOG_NAMES.EVENT_DELETE) {
+    eventStore.setDeletingEvent(null);
+  }
 }
 
 async function handleFormSaved() {
   dialogStore.close(DIALOG_NAMES.EVENT_FORM);
   await userStore.refreshDashboard();
   await resetAllStores();
+  // Refresh events after form save
+  await loadEvents();
 }
 
 async function handleDeleteConfirmed() {
   dialogStore.close(DIALOG_NAMES.EVENT_DELETE);
   await userStore.refreshDashboard();
   await resetAllStores();
+  // Clear active row if the deleted event was active
+  if (activeRow.value && eventStore.deletingEvent?.id === activeRow.value.id) {
+    activeRow.value = null;
+    eventStore.currentEvent = null;
+  }
+  await loadEvents();
 }
 
 const activateOrg = async (org: any | null) => {
@@ -283,7 +964,7 @@ async function resetAllStores(): Promise<void> {
 }
 
 // -------------------------------------------------------
-// LOAD EVENTS
+// LOAD EVENTS - UPDATED
 // -------------------------------------------------------
 const loadEvents = async () => {
   loading.value = true;
@@ -294,10 +975,25 @@ const loadEvents = async () => {
     return;
   }
 
-
-  await orgStore.fetchMyOrganizations(userId);
-  await eventStore.fetchUserFacilitatingEvents(userId);
-  loading.value = false;
+  try {
+    await orgStore.fetchMyOrganizations(userId);
+    await eventStore.fetchUserFacilitatingEvents(userId);
+    
+    // If there's an active event, try to find it in the loaded events
+    if (activeRow.value) {
+      const foundEvent = eventStore.events.find(e => 
+        (e.id === activeRow.value.id) || (e.eventSecret === activeRow.value.eventSecret)
+      );
+      if (!foundEvent) {
+        activeRow.value = null;
+        eventStore.currentEvent = null;
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load events:", err);
+  } finally {
+    loading.value = false;
+  }
 };
 
 const loadOrgEvents = async (org: { id: string }) => {
@@ -324,9 +1020,22 @@ watch(
     if (id) {
       await userStore.refreshDashboard();
       await resetAllStores();
+      await loadEvents();
     }
   },
   { immediate: true },
+);
+
+// Add watch for events to update active row if needed
+watch(
+  () => eventStore.events,
+  (events) => {
+    if (activeRow.value && !events.find(e => e.id === activeRow.value.id)) {
+      activeRow.value = null;
+      eventStore.currentEvent = null;
+    }
+  },
+  { deep: true }
 );
 
 const showOrgs = ref(false);
@@ -497,679 +1206,6 @@ const openCreateOrganization = () => {
 };
 </script>
 
-<template>
-  <v-container fluid class="pa-sm-2 fill-width">
-    <!-- Loading Indicator -->
-    <v-progress-linear
-      color="primary-darken-2"
-      indeterminate
-      v-if="loadingCurrent"
-    ></v-progress-linear>
-
-    <!-- Organizations Grid -->
-    <v-row dense v-if="showOrgs">
-      <v-col
-        v-for="org in orgStore.organizations.slice(0, 6)"
-        :key="org.id"
-        cols="12"
-        sm="6"
-        md="4"
-        lg="3"
-        class="d-flex"
-      >
-        <v-card
-          elevation="2"
-          class="flex-grow-1 organization-card"
-          @click="activateOrg(org)"
-          :class="{ 'selected-org': isSelected(org) }"
-          hover
-          ripple
-        >
-          <v-card-text class="pa-3">
-            <div class="d-flex justify-space-between align-start mb-2">
-              <div class="org-header">
-                <div class="text-h6 font-weight-bold text-truncate">
-                  {{ org.name }}
-                </div>
-                <div class="text-caption text-grey">
-                  {{ org.orgType || "N/A" }} | Events :
-                  {{ org.events?.length || 0 }} | Users:
-                  {{ org.users?.length || 0 }} | Created:
-                  {{ formatDate(org.createdAt) }}
-                </div>
-              </div>
-              <v-chip
-                size="small"
-                color="indigo-lighten-4"
-                class="text-indigo ml-2 org-tier-chip"
-                variant="outlined"
-                rounded="sm"
-              >
-                {{ org.subscriptionTier || "FREE" }}
-              </v-chip>
-            </div>
-          </v-card-text>
-          <v-divider />
-          <v-card-actions class="pt-0 pa-2">
-            <v-spacer />
-            <v-btn
-              v-if="org.orgLegalDocuments?.length < 5"
-              size="small"
-              color="secondary"
-              variant="outlined"
-              prepend-icon="mdi-paperclip-check"
-              @click.stop="uploadMedia(org)"
-              :class="{ 'mobile-btn': $vuetify.display.mobile }"
-            >
-              Legal
-            </v-btn>
-            <v-btn
-              size="small"
-              color="primary"
-              variant="outlined"
-              prepend-icon="mdi-wrench-cog-outline"
-              @click.stop="manageOrg(org)"
-              :class="{ 'mobile-btn': $vuetify.display.mobile }"
-            >
-              Manage
-            </v-btn>
-            <v-btn
-              size="small"
-              color="success"
-              variant="outlined"
-              prepend-icon="mdi-ticket-percent-outline"
-              @click.stop="getVoucher(org)"
-              :class="{ 'mobile-btn': $vuetify.display.mobile }"
-            >
-              Voucher
-            </v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-col>
-    </v-row>
-
-    <!-- HEADER SECTION -->
-    <v-card class="mb-1 mt-2 mb-sm-3">
-      <v-card-text class="pa-2">
-        <v-row align="center" class="flex-column flex-sm-row">
-          <v-col cols="12" sm="4" class="text-center text-sm-start">
-            <div class="d-flex align-center justify-center justify-sm-start">
-              <v-icon
-                icon="mdi-calendar-multiple"
-                size="32"
-                class="mr-3 text-primary"
-              ></v-icon>
-              <div>
-                <h1 class="text-h4 text-h5-sm font-weight-bold text-primary">
-                  Event Management
-                </h1>
-                <p class="text-grey mb-0 text-caption text-body-2-sm">
-                  Manage all events, facilitators, and schedules
-                </p>
-              </div>
-            </div>
-          </v-col>
-          <v-row no-gutters>
-  <!-- My Organizations -->
-  <v-col cols="12" sm="4" class="text-center text-sm-start">
-    <v-tooltip location="top">
-      <template #activator="{ props }">
-        <v-btn
-          v-bind="props"
-          variant="tonal"
-          class="mr-4"
-          prepend-icon="mdi-bank"
-          @click="toggleViewOrgs"
-          size="large"  
-          :class="{ 'mobile-full-width': $vuetify.display.mobile }"
-        >
-          My Organizations
-        </v-btn>
-      </template>
-      <span>Manage organizations and their members</span>
-    </v-tooltip>
-  </v-col>
-  <!-- Refresh -->
-  <v-col cols="12" sm="4" class="text-center">
-    <v-btn
-      variant="tonal"
-      prepend-icon="mdi-refresh"
-      @click="loadEvents"
-      size="large"
-      :loading="loading"  
-      :class="{ 'mobile-full-width': $vuetify.display.mobile }"
-    >
-      Refresh all
-    </v-btn>
-  </v-col>
-
-  <!-- Add Organization  <v-col cols="12" sm="4" class="text-center text-sm-end">
-    <v-btn
-      variant="tonal"
-      @click="openCreateOrganization"
-      size="large"
-      prepend-icon="mdi-bank-plus"
-      class="flex-grow-1"
-      block
-      :class="{ 'mobile-full-width': $vuetify.display.mobile }"
-    >
-      Add Organization
-    </v-btn>
-  </v-col>-->
- 
-</v-row>
-
-          <v-col cols="12" sm="4" class="text-center text-sm-end">
-               <v-btn
-                variant="tonal"
-                color="#850a85"
-                @click="openCreateOrganization"
-                size="large"
-                prepend-icon="mdi-bank-plus"
-                class="flex-grow-1"
-                block
-                :class="{ 'mobile-full-width': $vuetify.display.mobile }"
-              >
-                Add Organization
-              </v-btn>
-          </v-col>
-        </v-row>
-      </v-card-text>
-    </v-card>
-
-    <!-- FILTERS CARD -->
-    <v-card class="mb-4 mb-sm-6">
-      <v-card-text class="pa-3 pa-sm-4">
-        <v-row dense>
-          <v-col cols="12" sm="6" md="4" class="pb-2">
-            <v-text-field
-              v-model="search"
-              label="Search events..."
-              prepend-inner-icon="mdi-magnify"
-              variant="outlined"
-              density="compact"
-              clearable
-              hide-details
-              class="mobile-full-width"
-            ></v-text-field>
-          </v-col>
-          <v-col cols="12" sm="6" md="2" class="pb-2">
-            <v-select
-              v-model="filters.status"
-              :items="statusOptions"
-              label="Status"
-              variant="outlined"
-              density="compact"
-              clearable
-              hide-details
-              class="mobile-full-width"
-            ></v-select>
-          </v-col>
-          <v-col cols="12" sm="6" md="2" class="pb-2">
-            <v-select
-              v-model="filters.sortBy"
-              :items="sortOptions"
-              label="Sort By"
-              variant="outlined"
-              density="compact"
-              hide-details
-              class="mobile-full-width"
-            ></v-select>
-          </v-col>
-          <v-col cols="12" sm="6" md="4" class="pb-2">
-            <div class="d-flex flex-wrap gap-2 w-100">
-           
-            <v-btn
-              variant="outlined"
-              prepend-icon="mdi-refresh"
-              @click="loadEvents"
-              size="small"
-              :loading="loading"
-              class="flex-grow-1"
-              block
-              :class="{ 'mobile-full-width': $vuetify.display.mobile }"
-            >
-              <span class="d-none d-sm-inline">Refresh Events</span>
-              <span class="d-sm-none">Refresh Events</span>
-            </v-btn>
-              <v-btn
-                variant="tonal"
-                prepend-icon="mdi-filter-variant"
-                @click="showAdvancedFilters = !showAdvancedFilters"
-                size="small"
-                class="flex-grow-1"
-                block
-                :class="{ 'mobile-full-width': $vuetify.display.mobile }"
-              >
-                <span class="d-none d-sm-inline">More Filters</span>
-                <span class="d-sm-none">Filters</span>
-              </v-btn>
-            </div>
-          </v-col>
-        </v-row>
-
-        <!-- Advanced Filters -->
-        <v-expand-transition>
-          <div v-if="showAdvancedFilters" class="mt-3">
-            <v-row dense>
-              <v-col cols="12" sm="6" md="3" class="pb-2">
-                <v-menu>
-                  <template v-slot:activator="{ props }">
-                    <v-text-field
-                      v-model="filters.createdAfter"
-                      label="Created After"
-                      variant="outlined"
-                      density="compact"
-                      readonly
-                      v-bind="props"
-                      hide-details
-                      class="mobile-full-width"
-                    ></v-text-field>
-                  </template>
-                  <v-date-picker v-model="filters.createdAfter"></v-date-picker>
-                </v-menu>
-              </v-col>
-              <v-col cols="12" sm="6" md="3" class="pb-2">
-                <v-menu>
-                  <template v-slot:activator="{ props }">
-                    <v-text-field
-                      v-model="filters.createdBefore"
-                      label="Created Before"
-                      variant="outlined"
-                      density="compact"
-                      readonly
-                      v-bind="props"
-                      hide-details
-                      class="mobile-full-width"
-                    ></v-text-field>
-                  </template>
-                  <v-date-picker
-                    v-model="filters.createdBefore"
-                  ></v-date-picker>
-                </v-menu>
-              </v-col>
-            </v-row>
-          </div>
-        </v-expand-transition>
-      </v-card-text>
-    </v-card>
-
-    <!-- EVENTS TABLE -->
-    <v-card class="mt-2">
-      <v-card-title class="d-flex align-center pa-3 pa-sm-4">
-        <v-icon icon="mdi-calendar-multiple" class="mr-2"></v-icon>
-        <span class="text-h6 font-weight-medium">
-          Events ({{ eventStore.events.length }})
-        </span>
-        <v-spacer></v-spacer>
-        <v-btn
-          variant="outlined"
-          size="small"
-          prepend-icon="mdi-download"
-          @click="exportEvents"
-          class="d-none d-sm-flex"
-        >
-          Export
-        </v-btn>
-        <v-btn
-          icon
-          variant="text"
-          size="small"
-          @click="exportEvents"
-          class="d-sm-none"
-        >
-          <v-icon>mdi-download</v-icon>
-        </v-btn>
-      </v-card-title>
-
-      <v-divider></v-divider>
-
-      <!-- Mobile Cards View -->
-      <div class="d-block d-sm-none pa-3">
-        <div v-if="loading" class="py-8 text-center">
-          <v-progress-circular
-            indeterminate
-            color="primary"
-          ></v-progress-circular>
-        </div>
-        <div
-          v-else-if="eventStore.events.length === 0"
-          class="py-8 text-center"
-        >
-          <v-icon size="64" class="mb-2 text-grey-lighten-1"
-            >mdi-calendar-remove</v-icon
-          >
-          <div class="text-h6 text-grey">No events found</div>
-          <div class="text-grey mt-1">
-            Create your first event to get started
-          </div>
-        </div>
-        <v-card
-          v-for="event in eventStore.events"
-          :key="event.id"
-          class="mb-3 event-card-mobile"
-          :class="getRowClass(event, eventStore.events.indexOf(event))"
-          @click="setActiveEvent(event)"
-        >
-          <v-card-text class="pa-3">
-            <div class="d-flex justify-space-between align-start">
-              <div>
-                <div class="d-flex align-center mb-1">
-                  <v-icon
-                    :icon="getStatusIcon(event.status)"
-                    :color="getStatusColor(event.status)"
-                    size="small"
-                    class="mr-2"
-                  ></v-icon>
-                  <div class="text-body-1 font-weight-medium">
-                    {{ event.title }}
-                  </div>
-                </div>
-                <div class="text-caption text-grey mb-1">
-                  Key: {{ event.eventSecret }}
-                </div>
-              </div>
-              <v-chip
-                :color="getStatusColor(event.status)"
-                variant="flat"
-                size="small"
-                class="text-capitalize"
-              >
-                {{ event.status.toLowerCase() }}
-              </v-chip>
-            </div>
-
-            <v-divider class="my-2"></v-divider>
-
-            <div class="mobile-event-details">
-              <div class="detail-row">
-                <v-icon size="small" class="mr-2 text-grey">mdi-account</v-icon>
-                <span class="text-caption">{{
-                  event.organizer?.name || "N/A"
-                }}</span>
-              </div>
-              <div class="detail-row">
-                <v-icon size="small" class="mr-2 text-grey"
-                  >mdi-account-group</v-icon
-                >
-                <span class="text-caption">
-                  {{ event.facilitators?.length || 0 }} facilitators
-                </span>
-              </div>
-              <div class="detail-row">
-                <v-icon size="small" class="mr-2 text-grey"
-                  >mdi-calendar-clock</v-icon
-                >
-                <span class="text-caption">
-                  {{ getEventTimingStatus(event).text }}
-                </span>
-              </div>
-            </div>
-
-            <v-divider class="my-2"></v-divider>
-
-            <div class="d-flex justify-end gap-1">
-              <v-btn
-                icon
-                size="small"
-                variant="text"
-                color="info"
-                @click.stop="viewEvent(event)"
-              >
-                <v-icon>mdi-tools</v-icon>
-              </v-btn>
-              <v-btn
-                icon
-                size="small"
-                variant="text"
-                color="primary"
-                @click.stop="editEvent(event)"
-              >
-                <v-icon>mdi-text-box-edit-outline</v-icon>
-              </v-btn>
-              <v-btn
-                icon
-                size="small"
-                variant="text"
-                color="error"
-                @click.stop="deleteEvent(event)"
-              >
-                <v-icon>mdi-close-network-outline</v-icon>
-              </v-btn>
-            </div>
-          </v-card-text>
-        </v-card>
-      </div>
-
-      <!-- Desktop Table View -->
-      <v-data-table
-        class="d-none d-sm-block"
-        style="height: calc(100vh - 36vh); overflow-y: auto"
-        :headers="headers"
-        :items="eventStore.events"
-        :search="search"
-        :loading="loading"
-        :items-per-page="pagination.itemsPerPage"
-        :page="pagination.page"
-        :item-class="(item: any, index: number) => getRowClass(item, index)"
-        density="comfortable"
-        item-value="id"
-      >
-        <!-- Loading State -->
-        <template v-slot:loading>
-          <v-skeleton-loader type="table-row@10"></v-skeleton-loader>
-        </template>
-
-        <!-- No Data State -->
-        <template v-slot:no-data>
-          <div class="py-8 text-center">
-            <v-icon size="64" class="mb-2 text-grey-lighten-1"
-              >mdi-calendar-remove</v-icon
-            >
-            <div class="text-h6 text-grey">No events found</div>
-            <div class="text-grey mt-1">
-              Create your first event to get started
-            </div>
-          </div>
-        </template>
-
-        <!-- Event Title Column -->
-        <template v-slot:item.title="{ item }">
-          <div class="d-flex align-center">
-            <v-icon
-              :icon="getStatusIcon(item.status)"
-              :color="getStatusColor(item.status)"
-              size="small"
-              class="mr-2"
-            ></v-icon>
-            <div>
-              <div class="font-weight-medium text-body-2">{{ item.title }}</div>
-              <div class="text-caption text-grey">
-                Key: {{ item.eventSecret }}
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- Organizer Column -->
-        <template v-slot:item.organizer="{ item }">
-          <div class="d-flex align-center">
-            <span class="text-body-2">{{ item.organizer?.name || "N/A" }}</span>
-          </div>
-        </template>
-
-        <!-- Facilitators Column -->
-        <template v-slot:item.facilitators="{ item }">
-          <div v-if="item.facilitators?.length">
-            <v-chip
-              v-for="facilitator in item.facilitators.slice(0, 2)"
-              :key="facilitator.id"
-              size="small"
-              variant="outlined"
-              class="mr-1 mb-1"
-            >
-              {{ facilitator.name }}
-            </v-chip>
-            <v-chip
-              v-if="item.facilitators.length > 2"
-              size="small"
-              variant="tonal"
-              color="grey"
-            >
-              +{{ item.facilitators.length - 2 }} more
-            </v-chip>
-          </div>
-          <span v-else class="text-grey text-caption">No facilitators</span>
-        </template>
-
-        <!-- Status Column -->
-        <template v-slot:item.status="{ item }">
-          <v-chip
-            :color="getChipStatusColor(isActive(item))"
-            variant="flat"
-            size="small"
-            class="text-capitalize"
-            @click="setActiveEvent(item)"
-          >
-            {{ item.status.toLowerCase() }}
-            {{ isActive(item) ? " : Engaged" : "" }}
-          </v-chip>
-        </template>
-
-        <!-- Timing Column -->
-        <template v-slot:item.timing="{ item }">
-          <div class="text-body-2">
-            <div>
-              {{ formatDateTime(item.dateTime.start) }}
-              <v-chip
-                :color="getEventTimingStatus(item).color"
-                variant="flat"
-                size="x-small"
-                class="mt-0"
-              >
-                {{ getEventDuration(item) }} |
-                {{ getEventTimingStatus(item).text }}
-              </v-chip>
-            </div>
-          </div>
-        </template>
-
-        <!-- Actions Column -->
-        <template v-slot:item.actions="{ item }">
-          <div class="d-flex justify-end gap-1">
-            <v-tooltip location="top">
-              <template v-slot:activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  icon
-                  size="small"
-                  variant="text"
-                  color="info"
-                  @click="viewEvent(item)"
-                >
-                  <v-icon>mdi-tools</v-icon>
-                </v-btn>
-              </template>
-              <span>Set Current & Manage Event</span>
-            </v-tooltip>
-
-            <v-tooltip location="top">
-              <template v-slot:activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  icon
-                  size="small"
-                  variant="text"
-                  color="primary"
-                  @click="editEvent(item)"
-                >
-                  <v-icon>mdi-text-box-edit-outline</v-icon>
-                </v-btn>
-              </template>
-              <span>Edit Event</span>
-            </v-tooltip>
-
-            <v-tooltip location="top">
-              <template v-slot:activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  icon
-                  size="small"
-                  variant="text"
-                  color="error"
-                  @click="deleteEvent(item)"
-                >
-                  <v-icon>mdi-close-network-outline</v-icon>
-                </v-btn>
-              </template>
-              <span>Cancel Event</span>
-            </v-tooltip>
-          </div>
-        </template>
-
-        <!-- Custom Footer with Pagination -->
-        <template v-slot:bottom>
-          <div class="d-flex align-center pa-3 table-footer">
-            <span class="text-caption text-grey">
-              Showing
-              {{ Math.min(eventStore.events.length, pagination.itemsPerPage) }}
-              of {{ eventStore.events.length }} events
-            </span>
-            <v-spacer></v-spacer>
-            <v-pagination
-              v-model="pagination.page"
-              :length="
-                Math.ceil(eventStore.events.length / pagination.itemsPerPage)
-              "
-              density="comfortable"
-              class="table-pagination"
-            ></v-pagination>
-          </div>
-        </template>
-      </v-data-table>
-    </v-card>
-
-    <!-- DIALOGS -->
-    <v-dialog v-model="showCreateOrganization" max-width="630" persistent>
-      <CreateOrganization />
-    </v-dialog>
-    
-    <v-dialog v-model="showLegalDocs" max-width="630" persistent>
-      <LegalDocs />
-    </v-dialog>
-    
-    <v-dialog v-model="showOrgDetails" max-width="630">
-      <OrgDetails />
-    </v-dialog>
-    
-    <v-dialog v-model="showVoucherDialog" width="66rem">
-      <ProGenerateVoucher />
-    </v-dialog>
-    
-    <v-dialog v-model="showEventForm" max-width="800" persistent>
-      <EventFormDialog
-        @saved="handleFormSaved"
-        @cancel="handleDialogClose(DIALOG_NAMES.EVENT_FORM)"
-      />
-    </v-dialog>
-
-    <v-dialog v-model="showEventView" max-width="700">
-      <EventViewDialog @close="handleDialogClose(DIALOG_NAMES.EVENT_VIEW)" />
-    </v-dialog>
-
-    <v-dialog v-model="showEventDelete" max-width="500" persistent>
-      <EventDeleteDialog
-        @confirmed="handleDeleteConfirmed"
-        @cancel="handleDialogClose(DIALOG_NAMES.EVENT_DELETE)"
-      />
-    </v-dialog>
-    
-    <v-dialog v-model="showManageEvent" width="75%">
-      <ManageEvent />
-    </v-dialog>
-  </v-container>
-</template>
-
 <style scoped>
 .fill-width {
   width: 100%;
@@ -1262,6 +1298,17 @@ const openCreateOrganization = () => {
   color: white;
 }
 
+/* Active Event Chip Styles */
+.active-event-chip {
+  border: 2px solid rgb(var(--v-theme-success));
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+.active-event-chip:hover {
+  transform: scale(1.02);
+}
+
 @media (max-width: 960px) {
   .text-h5-sm {
     font-size: 1.5rem !important;
@@ -1278,11 +1325,18 @@ const openCreateOrganization = () => {
   background-color: rgba(60, 186, 198, 0.6) !important;
   border-left: 4px solid #3cbac6 !important;
   border-right: 4px solid #3cbac6 !important;
+  cursor: pointer;
 }
 
 .v-data-table tbody tr {
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease;
+}
+
+/* Active row styling */
+.v-data-table tbody tr.active-row {
+  background-color: rgba(60, 186, 198, 0.15) !important;
+  border-left: 4px solid #3cbac6 !important;
 }
 </style>

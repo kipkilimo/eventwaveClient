@@ -619,6 +619,7 @@ export const useOrganizationStore = defineStore("organizationStore", {
 
         if (createdOrg) {
           this.organizations = [...this.organizations, createdOrg];
+          this.currentOrganization = createdOrg;
         }
         // await this.fetchMyOrganizations(userStore?.user?.id || "");
 
@@ -701,6 +702,7 @@ export const useOrganizationStore = defineStore("organizationStore", {
 
         if (createdOrg) {
           this.organizations = [...this.organizations, createdOrg];
+          this.currentOrganization = createdOrg;
         }
 
         // await this.fetchMyOrganizations(userStore?.user?.id || "");
