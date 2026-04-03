@@ -1,3 +1,71 @@
+<template>
+  <div>
+    <!-- DYNAMIC VIEWER BASED ON ROLE -->
+    <component
+      :is="roleViewerComponent"
+      v-if="roleViewerComponent && event"
+      :event="event"
+      :event-id="event.id"
+      :event-data="event"
+      :access-secret="accessSecret"
+      :phone-number="phoneNumber"
+      @refresh="refreshEvent"
+      @update-event="handleEventUpdate"
+    />
+    
+    <!-- Loading State -->
+    <v-container v-else-if="eventStore.isLoading" fluid class="pa-4 pa-md-6">
+      <v-row>
+        <v-col cols="12" class="text-center">
+          <v-progress-circular
+            indeterminate
+            color="primary"
+            size="64"
+          />
+          <p class="mt-4 text-body-1">Loading event details...</p>
+        </v-col>
+      </v-row>
+    </v-container>
+
+    <!-- Error State -->
+    <v-container v-else-if="eventStore.error" fluid class="pa-4 pa-md-6">
+      <v-row>
+        <v-col cols="12" class="text-center">
+          <v-icon size="64" color="error">mdi-alert-circle</v-icon>
+          <p class="mt-4 text-body-1">{{ eventStore.error }}</p>
+          <v-btn color="primary" @click="refreshEvent">Retry</v-btn>
+        </v-col>
+      </v-row>
+    </v-container>
+
+    <!-- No Event State -->
+    <v-container v-else fluid class="pa-4 pa-md-6">
+      <v-row>
+        <v-col cols="12" class="text-center">
+          <v-icon size="64" color="warning">mdi-calendar-blank</v-icon>
+          <p class="mt-4 text-body-1">No event found</p>
+          <v-btn color="primary" @click="goBack">Back to Events</v-btn>
+        </v-col>
+      </v-row>
+    </v-container>
+
+    <!-- SNACKBAR -->
+    <v-snackbar 
+      v-model="snackbar.show" 
+      :color="snackbar.color"
+      timeout="3000"
+      location="bottom"
+    >
+      {{ snackbar.message }}
+      <template #actions>
+        <v-btn variant="text" @click="snackbar.show = false">
+          Close
+        </v-btn>
+      </template>
+    </v-snackbar>
+  </div>
+</template>
+
 <script setup lang="ts">
 import {
   ref,
@@ -9,7 +77,6 @@ import {
   defineAsyncComponent,
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
-
 import { useEventStore } from "@/stores/event";
 import { useUserStore } from "@/stores/user";
 import type { Event } from "@/stores/event";
@@ -29,10 +96,6 @@ const event = ref<Event | null>(null);
 const accessSecret = ref<string | null>(null);
 const phoneNumber = ref<string | null>(null);
 
-const showDetailsDialog = ref(false);
-const showLeaveDialog = ref(false);
-const leavingEvent = ref(false);
-
 const snackbar = ref({
   show: false,
   message: "",
@@ -40,20 +103,22 @@ const snackbar = ref({
 });
 
 // ---------------------------
-// DYNAMIC VIEWER (🔥 NEW)
+// DYNAMIC VIEWER
 // ---------------------------
-const roleViewerComponent = shallowRef(null);
+const roleViewerComponent = shallowRef<any>(null);
 
 const viewers = {
   ADMIN: () => import("@/components/event/viewers/EventAdmin.vue"),
-  FACILITATOR: () =>
-    import("@/components/event/viewers/EventFacilitator.vue"),
-  PARTICIPANT: () =>
-    import("@/components/event/viewers/EventParticipant.vue"),
+  FACILITATOR: () => import("@/components/event/viewers/EventFacilitator.vue"),
+  PARTICIPANT: () => import("@/components/event/viewers/EventParticipant.vue"),
 };
 
 const FallbackViewer = {
-  template: `<div class="pa-8 text-center">Viewer unavailable</div>`,
+  template: `<div class="pa-8 text-center">
+    <v-icon size="64" color="warning">mdi-account-alert</v-icon>
+    <p class="mt-4">Unable to load viewer for your role</p>
+    <v-btn color="primary" @click="$router.push('/events')">Back to Events</v-btn>
+  </div>`,
 };
 
 // Role priority
@@ -66,36 +131,64 @@ const resolveUserRole = (): string => {
   const userId = userStore.user.id;
   const roles: string[] = [];
 
-  if (event.value.admins?.some((u: any) => u.id === userId)) {
+  // Check admin status
+  if (event.value.admins?.some((u: any) => u.id === userId || u === userId)) {
     roles.push("ADMIN");
   }
 
-  if (event.value.facilitators?.some((u: any) => u.id === userId)) {
+  // Check facilitator status
+  if (event.value.facilitators?.some((u: any) => u.id === userId || u === userId)) {
     roles.push("FACILITATOR");
   }
 
-  if (event.value.participants?.some((u: any) => u.id === userId)) {
+  // Check participant status
+  if (event.value.participants?.some((u: any) => u.id === userId || u === userId)) {
     roles.push("PARTICIPANT");
   }
 
-  return ROLE_PRIORITY.find((r) => roles.includes(r)) || "PARTICIPANT";
+  const role = ROLE_PRIORITY.find((r) => roles.includes(r)) || "PARTICIPANT";
+  console.log(`Resolved user role: ${role}`, { userId, roles });
+  
+  return role;
 };
 
-// Watch → load correct viewer
+// Watch event and user to load correct viewer
 watch(
-  [event, () => userStore.user],
-  () => {
-    if (!event.value) return;
+  [() => event.value, () => userStore.user],
+  async () => {
+    if (!event.value) {
+      roleViewerComponent.value = null;
+      return;
+    }
 
     const role = resolveUserRole();
-    const loader = viewers[role] || viewers.PARTICIPANT;
+    const loader = viewers[role as keyof typeof viewers];
 
-    roleViewerComponent.value = defineAsyncComponent({
-      loader,
-      errorComponent: FallbackViewer,
-    });
+    if (!loader) {
+      console.error(`No viewer found for role: ${role}`);
+      roleViewerComponent.value = FallbackViewer;
+      return;
+    }
+
+    try {
+      roleViewerComponent.value = defineAsyncComponent({
+        loader,
+        loadingComponent: {
+          template: `<div class="pa-8 text-center">
+            <v-progress-circular indeterminate color="primary" />
+            <p class="mt-4">Loading ${role.toLowerCase()} view...</p>
+          </div>`,
+        },
+        errorComponent: FallbackViewer,
+        delay: 200,
+        timeout: 3000,
+      });
+    } catch (error) {
+      console.error(`Failed to load viewer component for role ${role}:`, error);
+      roleViewerComponent.value = FallbackViewer;
+    }
   },
-  { immediate: true }
+  { immediate: true, deep: true }
 );
 
 // ---------------------------
@@ -103,92 +196,35 @@ watch(
 // ---------------------------
 const isAuthenticated = computed(() => userStore.isAuthenticated);
 
-const isParticipant = computed(() => {
-  if (!event.value || !userStore.user) return false;
-  return (
-    event.value.participants?.some(
-      (p: any) => p.id === userStore.user?.id
-    ) || false
-  );
-});
-
 // ---------------------------
 // METHODS
 // ---------------------------
 const goBack = () => router.push("/events");
 
-const shareEvent = async () => {
-  if (!event.value) return;
-
-  const shareData = {
-    title: event.value.title,
-    text: `Join me for ${event.value.title}!`,
-    url: window.location.href,
-  };
-
-  try {
-    if (navigator.share) {
-      await navigator.share(shareData);
-    } else {
-      await copyEventLink();
-    }
-  } catch {}
-};
-
-const copyEventLink = async () => {
-  try {
-    await navigator.clipboard.writeText(window.location.href);
-    showNotification("Event link copied!", "success");
-  } catch {
-    showNotification("Failed to copy link", "error");
-  }
-};
-
-const copyToClipboard = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text);
-    showNotification("Copied!", "success");
-  } catch {
-    showNotification("Copy failed", "error");
-  }
-};
-
-const viewEventDetails = () => (showDetailsDialog.value = true);
-const leaveEvent = () => (showLeaveDialog.value = true);
-
-const confirmLeaveEvent = async () => {
-  if (!event.value) return;
-
-  leavingEvent.value = true;
-  try {
-    await eventStore.leaveEvent(event.value.id);
-    showNotification("Left event", "success");
-
-    setTimeout(() => router.push("/events"), 1200);
-  } catch (err: any) {
-    showNotification(err.message || "Failed", "error");
-  } finally {
-    leavingEvent.value = false;
-    showLeaveDialog.value = false;
-  }
-};
-
 const refreshEvent = async () => {
   if (!event.value?.id) return;
 
-  await eventStore.fetchEvent(event.value.id);
-  event.value = eventStore.currentEvent;
+  try {
+    await eventStore.fetchEvent(event.value.id);
+    event.value = eventStore.currentEvent;
+    showNotification("Event refreshed", "info");
+  } catch (err: any) {
+    showNotification(err.message || "Failed to refresh event", "error");
+  }
 };
 
 const handleEventUpdate = (updated: Event) => {
   event.value = updated;
-  showNotification("Event updated");
+  showNotification("Event updated successfully", "success");
 };
-
-const formatDateTime = (d: string) => new Date(d).toLocaleString();
 
 const showNotification = (message: string, color = "success") => {
   snackbar.value = { show: true, message, color };
+  
+  // Auto-hide after 3 seconds
+  setTimeout(() => {
+    snackbar.value.show = false;
+  }, 3000);
 };
 
 // ---------------------------
@@ -197,120 +233,106 @@ const showNotification = (message: string, color = "success") => {
 const parseQueryParams = () => {
   const { accessKey, phone, eventSecret, key } = route.query;
 
-  accessSecret.value = (accessKey || eventSecret || key) as string;
-  phoneNumber.value = phone as string;
+  accessSecret.value = (accessKey || eventSecret || key) as string || null;
+  phoneNumber.value = phone as string || null;
+  
+  if (accessSecret.value) {
+    console.log("Access credentials found");
+  }
 };
 
-onMounted(() => {
-  parseQueryParams();
+// Fetch event by ID from route params
+const fetchEvent = async () => {
+  const eventId = route.params.id as string;
+  
+  if (!eventId) {
+    console.error("No event ID provided in route params");
+    showNotification("No event ID provided", "error");
+    return;
+  }
 
-  if (eventStore.currentEvent) {
+  console.log(`Fetching event with ID: ${eventId}`);
+  
+  try {
+    await eventStore.fetchEvent(eventId);
     event.value = eventStore.currentEvent;
+    
+    if (!event.value) {
+      showNotification("Event not found", "error");
+    } else {
+      console.log(`Event loaded: ${event.value.title}`);
+    }
+  } catch (err: any) {
+    console.error("Failed to fetch event:", err);
+    showNotification(err.message || "Failed to load event", "error");
+  }
+};
+
+// Watch for route changes
+watch(
+  () => route.params.id,
+  async (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      console.log(`Route changed to event ID: ${newId}`);
+      await fetchEvent();
+    }
+  }
+);
+
+// Watch for authentication changes
+watch(
+  () => userStore.isAuthenticated,
+  async (isAuth) => {
+    if (isAuth && event.value?.id) {
+      console.log("User authenticated, refreshing event data");
+      await refreshEvent();
+    }
+  }
+);
+
+onMounted(async () => {
+  console.log("EventViewer component mounted");
+  parseQueryParams();
+  
+  // If event data is already in store, use it
+  if (eventStore.currentEvent) {
+    console.log("Using existing event from store");
+    event.value = eventStore.currentEvent;
+  } else {
+    await fetchEvent();
   }
 });
 
 onUnmounted(() => {
+  console.log("EventViewer component unmounted");
   eventStore.clearError();
 });
 </script>
 
-<template>
-  <div class="event-viewer-page">
-    <!-- HEADER -->
-    <v-app-bar color="primary" dark prominent v-if="event">
-      <v-btn icon @click="goBack">
-        <v-icon>mdi-arrow-left</v-icon>
-      </v-btn>
-
-      <v-toolbar-title>{{ event.title }}</v-toolbar-title>
-
-      <v-spacer />
-
-      <v-btn icon @click="shareEvent">
-        <v-icon>mdi-share-variant</v-icon>
-      </v-btn>
-
-      <v-menu v-if="isAuthenticated">
-        <template #activator="{ props }">
-          <v-btn icon v-bind="props">
-            <v-icon>mdi-dots-vertical</v-icon>
-          </v-btn>
-        </template>
-
-        <v-list>
-          <v-list-item @click="copyEventLink">
-            <v-list-item-title>Copy Event Link</v-list-item-title>
-          </v-list-item>
-
-          <v-list-item @click="viewEventDetails">
-            <v-list-item-title>Event Details</v-list-item-title>
-          </v-list-item>
-
-          <v-divider />
-
-          <v-list-item v-if="isParticipant" @click="leaveEvent">
-            <v-list-item-title class="text-error">
-              Leave Event
-            </v-list-item-title>
-          </v-list-item>
-        </v-list>
-      </v-menu>
-    </v-app-bar>
-
-    <!-- 🔥 DYNAMIC VIEWER -->
-    <v-main>
-      <component
-        :is="roleViewerComponent"
-        v-if="roleViewerComponent"
-        :event="event"
-        :access-secret="accessSecret"
-        :phone-number="phoneNumber"
-        @refresh="refreshEvent"
-        @update-event="handleEventUpdate"
-      />
-    </v-main>
-
-    <!-- DETAILS DIALOG -->
-    <v-dialog v-model="showDetailsDialog" max-width="600">
-      <v-card>
-        <v-card-title>Event Details</v-card-title>
-
-        <v-card-text v-if="event">
-          {{ event.title }}
-        </v-card-text>
-
-        <v-card-actions>
-          <v-spacer />
-          <v-btn text @click="showDetailsDialog = false">Close</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- LEAVE DIALOG -->
-    <v-dialog v-model="showLeaveDialog" max-width="400">
-      <v-card>
-        <v-card-title>Leave Event</v-card-title>
-
-        <v-card-actions>
-          <v-spacer />
-          <v-btn text @click="showLeaveDialog = false">Cancel</v-btn>
-          <v-btn color="error" @click="confirmLeaveEvent">
-            Leave
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- SNACKBAR -->
-    <v-snackbar v-model="snackbar.show" :color="snackbar.color">
-      {{ snackbar.message }}
-    </v-snackbar>
-  </div>
-</template>
-
 <style scoped>
 .event-viewer-page {
-  min-height: 100vh;
-  background: #f5f5f5;
+  min-height: 81vh;
+  min-height: 81vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #eef2f5 100%);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 </style>

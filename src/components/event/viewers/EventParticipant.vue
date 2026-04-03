@@ -1,491 +1,865 @@
 <template>
-  <div class="event-participant">
-    <v-container>
-      <v-row>
-        <v-col cols="12">
-          <EventHeader :event="event" :role="'participant'" />
-        </v-col>
-      </v-row>
+    <v-container fluid class="pa-2 pa-md-3">
+      <v-card class="main-card" elevation="3" rounded="xl">
+        <!-- Loading -->
+        <v-row v-if="eventStore.isLoading" class="pa-8">
+          <v-col cols="12" class="text-center">
+            <v-progress-circular indeterminate color="primary" size="64" />
+            <p class="mt-4 text-body-1">Loading event details...</p>
+          </v-col>
+        </v-row>
 
-      <v-row>
-        <v-col cols="12" lg="8">
-          <!-- Live Stream -->
-          <v-card class="mb-4">
-            <v-card-title>Live Session</v-card-title>
-            <v-card-text>
-              <div class="video-placeholder text-center pa-8">
-                <v-icon size="64" color="grey">mdi-video</v-icon>
-                <p>Waiting for session to start...</p>
-              </div>
-            </v-card-text>
-          </v-card>
+        <!-- Error -->
+        <v-row v-else-if="eventStore.error" class="pa-8">
+          <v-col cols="12" class="text-center">
+            <v-icon size="64" color="error">mdi-alert-circle</v-icon>
+            <p class="mt-4 text-body-1">{{ eventStore.error }}</p>
+            <v-btn color="primary" @click="retryLoad">Retry</v-btn>
+          </v-col>
+        </v-row>
 
-          <!-- Chat -->
-          <v-card>
-            <v-card-title>
-              Chat
-              <v-spacer></v-spacer>
-              <v-chip
-                v-if="event.interactivity?.allowChat"
-                color="success"
-                size="small"
-              >
-                Enabled
-              </v-chip>
-            </v-card-title>
-            <v-card-text class="chat-container">
-              <div class="chat-messages" ref="chatMessagesRef">
-                <div
-                  v-for="message in chatMessages"
-                  :key="message.id"
-                  class="chat-message"
-                >
-                  <strong>{{ message.userName }}:</strong>
-                  <span>{{ message.content }}</span>
-                  <span class="text-caption ml-2">{{
-                    formatTime(message.timestamp)
-                  }}</span>
+        <!-- Content -->
+        <template v-else-if="event"> 
+          <!-- HERO -->
+          <div class="hero-section" :style="heroStyle">
+            <div class="hero-content">
+              <div class="d-flex align-center ga-4 flex-wrap">
+
+                <v-avatar size="80" rounded="lg" class="hero-logo elevation-3">
+                  <v-img :src="event?.branding?.logoUrl" contain />
+                </v-avatar>
+
+                <div class="hero-text">
+                  <div class="text-h3 font-weight-bold text-white">
+                    {{ event.title }}
+                  </div>
+
+                  <div class="text-subtitle-1 text-white text-opacity-90 mt-1">
+                    {{ event?.branding?.tagline || 'Professional Training Event' }}
+                  </div>
+
+                  <!-- Status Chips -->
+<div class="d-flex flex-wrap ga-2 mt-3">
+
+  <!-- Temporal Status -->
+  <v-chip
+    :style="{
+      backgroundColor: temporalStatus.color || '#1976D2',
+      color: '#fff',
+      fontWeight: 500
+    }"
+    size="small"
+  >
+    <v-icon start size="small" style="color:#fff">
+      {{ temporalStatus.icon }}
+    </v-icon>
+    {{ temporalStatus.label }}
+  </v-chip>
+
+  <!-- Event Status -->
+  <v-chip
+    :style="{
+      backgroundColor: statusColor || '#2E7D32',
+      color: '#fff',
+      fontWeight: 500
+    }"
+    size="small"
+  >
+    <v-icon start size="small" style="color:#fff">
+      mdi-check-circle
+    </v-icon>
+    {{ event.status }}
+  </v-chip>
+
+  <!-- Event Type -->
+  <v-chip
+    :style="{
+      backgroundColor: eventTypeColor || '#6D4C41',
+      color: '#fff',
+      fontWeight: 500,
+      border: 'none'
+    }"
+    size="small"
+  >
+    {{ event.eventType }}
+  </v-chip>
+
+</div>
                 </div>
+
               </div>
-              <v-text-field
-                v-if="event.interactivity?.allowChat"
-                v-model="newMessage"
-                label="Type your message..."
-                append-icon="mdi-send"
-                @click:append="sendMessage"
-                @keyup.enter="sendMessage"
-                dense
-                outlined
-              ></v-text-field>
-            </v-card-text>
-          </v-card>
-        </v-col>
+            </div>
+          </div>
 
-        <v-col cols="12" lg="4">
-          <!-- Q&A Section -->
-          <v-card class="mb-4">
-            <v-card-title>
-              Q&A
-              <v-spacer></v-spacer>
-              <v-chip
-                v-if="event.interactivity?.allowQnA"
-                color="success"
-                size="small"
-              >
-                Open
-              </v-chip>
-            </v-card-title>
-            <v-card-text>
-              <v-list>
-                <v-list-item v-for="qa in qaList" :key="qa.id">
-                  <v-list-item-content>
-                    <v-list-item-title class="font-weight-bold">
-                      Q: {{ qa.question }}
-                    </v-list-item-title>
-                    <v-list-item-subtitle v-if="qa.answer">
-                      A: {{ qa.answer }}
-                    </v-list-item-subtitle>
-                  </v-list-item-content>
-                </v-list-item>
-              </v-list>
-              <v-text-field
-                v-if="event.interactivity?.allowQnA"
-                v-model="newQuestion"
-                label="Ask a question..."
-                append-icon="mdi-send"
-                @click:append="askQuestion"
-                dense
-                outlined
-              ></v-text-field>
-            </v-card-text>
-          </v-card>
+          <!-- BODY -->
+          <v-container fluid class="pa-6">
+            <v-row>
 
-          <!-- Polls -->
-          <v-card class="mb-4" v-if="activePoll">
-            <v-card-title>Active Poll</v-card-title>
-            <v-card-text>
-              <p>{{ activePoll.question }}</p>
-              <v-radio-group v-model="pollResponse">
-                <v-radio
-                  v-for="option in activePoll.options"
-                  :key="option"
-                  :label="option"
-                  :value="option"
-                ></v-radio>
-              </v-radio-group>
-              <v-btn color="primary" block @click="submitPollResponse">
-                Submit Response
-              </v-btn>
-            </v-card-text>
-          </v-card>
+              <!-- LEFT COLUMN -->
+              <v-col cols="12" lg="8">
 
-          <!-- Resources -->
-          <v-card>
-            <v-card-title>Resources</v-card-title>
-            <v-card-text>
-              <v-list>
-                <v-list-item v-for="resource in resources" :key="resource.id">
-                  <v-list-item-icon>
-                    <v-icon>{{ resource.icon }}</v-icon>
-                  </v-list-item-icon>
-                  <v-list-item-content>
-                    <v-list-item-title>{{ resource.title }}</v-list-item-title>
-                    <v-list-item-subtitle>{{
-                      resource.description
-                    }}</v-list-item-subtitle>
-                  </v-list-item-content>
-                  <v-list-item-action>
-                    <v-btn icon @click="downloadResource(resource)">
-                      <v-icon>mdi-download</v-icon>
+                <!-- Description -->
+                <v-card class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-information</v-icon>
+                    About This Event
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-2">
+                    <p class="text-body-1">
+                      {{ event.description }}
+                    </p>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Access Credentials -->
+                <v-card v-if="event.eventSecret" class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-key</v-icon>
+                    Access Credentials
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-4">
+                    <div class="d-flex align-center ga-2">
+                      <v-icon color="primary">mdi-lock</v-icon>
+                      <div>
+                        <div class="text-caption text-grey">Event Secret</div>
+                        <div class="text-h6 font-mono">{{ event.eventSecret }}</div>
+                      </div>
+                    </div>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Date & Time -->
+                <v-card class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-calendar-clock</v-icon>
+                    Date & Time
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-4">
+                    <v-row>
+                      <v-col cols="12" sm="6">
+                        <div class="d-flex align-center ga-3">
+                          <v-icon color="primary" size="36">mdi-calendar-start</v-icon>
+                          <div>
+                            <div class="text-caption text-grey">Start</div>
+                            <div class="text-h6 font-weight-medium">{{ formattedStartDate }}</div>
+                            <div class="text-body-2 text-grey">{{ formattedStartTime }}</div>
+                          </div>
+                        </div>
+                      </v-col>
+
+                      <v-col cols="12" sm="6">
+                        <div class="d-flex align-center ga-3">
+                          <v-icon color="error" size="36">mdi-calendar-end</v-icon>
+                          <div>
+                            <div class="text-caption text-grey">End</div>
+                            <div class="text-h6 font-weight-medium">{{ formattedEndDate }}</div>
+                            <div class="text-body-2 text-grey">{{ formattedEndTime }}</div>
+                          </div>
+                        </div>
+                      </v-col>
+                    </v-row>
+
+                    <v-divider class="my-3" />
+
+                    <div class="d-flex flex-wrap ga-2">
+                      <v-chip size="small" color="primary" variant="tonal">
+                        <v-icon start size="small">mdi-clock-outline</v-icon>
+                        Duration: {{ durationFormatted }}
+                      </v-chip>
+                      <v-chip size="small" color="info" variant="tonal">
+                        <v-icon start size="small">mdi-map-marker</v-icon>
+                        {{ event?.metadata?.timezone || 'Africa/Nairobi' }}
+                      </v-chip>
+                    </div>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Location -->
+                <v-card class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-map-marker</v-icon>
+                    Location
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-4">
+                    <div class="d-flex align-start ga-3">
+                      <v-icon :color="event?.location?.isVirtual ? 'success' : 'primary'" size="32">
+                        {{ event?.location?.isVirtual ? 'mdi-video' : 'mdi-office-building' }}
+                      </v-icon>
+                      <div>
+                        <div class="text-h6">{{ event?.location?.name || 'Location TBA' }}</div>
+                        <div class="text-body-2 text-grey">{{ event?.location?.address || 'Address to be announced' }}</div>
+                        <v-chip
+                          v-if="event?.location?.isVirtual && event?.location?.virtualLink"
+                          size="small"
+                          color="success"
+                          class="mt-2"
+                          @click="openVirtualLink"
+                        >
+                          <v-icon start size="small">mdi-webcam</v-icon>
+                          Join Virtual Event
+                        </v-chip>
+                      </div>
+                    </div>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Interactive Features -->
+                <v-card class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-connection</v-icon>
+                    Interactive Features
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-4">
+                    <v-row dense>
+                      <v-col
+                        v-for="feature in interactivityFeatures"
+                        :key="feature.key"
+                        cols="6"
+                        sm="4"
+                        md="3"
+                      >
+                        <div class="d-flex align-center ga-2">
+                          <v-icon :color="feature.enabled ? 'success' : 'grey'" size="20">
+                            {{ feature.enabled ? 'mdi-check-circle' : 'mdi-close-circle' }}
+                          </v-icon>
+                          <span :class="{ 'text-grey': !feature.enabled }">{{ feature.label }}</span>
+                        </div>
+                      </v-col>
+                    </v-row>
+                  </v-card-text>
+                </v-card>
+
+              </v-col>
+
+              <!-- RIGHT COLUMN - SIDEBAR -->
+              <v-col cols="12" lg="4">
+
+                <!-- Countdown Card -->
+                <v-card v-if="temporalStatus.type === 'upcoming'" class="mb-6" elevation="2" rounded="lg">
+                  <v-card-text class="pa-4 text-center">
+                    <div class="text-caption text-grey mb-2">Event Starts In</div>
+                    <div class="countdown-timer">
+                      <div class="countdown-block">
+                        <span class="countdown-value">{{ countdown.days }}</span>
+                        <span class="countdown-label">days</span>
+                      </div>
+                      <div class="countdown-block">
+                        <span class="countdown-value">{{ countdown.hours }}</span>
+                        <span class="countdown-label">hrs</span>
+                      </div>
+                      <div class="countdown-block">
+                        <span class="countdown-value">{{ countdown.minutes }}</span>
+                        <span class="countdown-label">mins</span>
+                      </div>
+                    </div>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Live Now Card -->
+                <v-card v-if="temporalStatus.type === 'live'" class="mb-6" elevation="2" rounded="lg" color="error" dark>
+                  <v-card-text class="pa-4 text-center">
+                    <v-icon size="32" color="white" class="mb-2">mdi-record-rec</v-icon>
+                    <div class="text-h6 font-weight-bold text-white">Live Now</div>
+                    <div class="text-body-2 text-white text-opacity-90">Join the event in progress</div>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Event Stats -->
+                <v-card class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-chart-box</v-icon>
+                    Event Overview
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-0">
+                    <v-list density="compact">
+                      <v-list-item>
+                        <template #prepend><v-icon>mdi-account-group</v-icon></template>
+                        <v-list-item-title>Capacity</v-list-item-title>
+                        <template #append>
+                          <v-chip color="primary" size="small">{{ event.capacity }} attendees</v-chip>
+                        </template>
+                      </v-list-item>
+                      <v-divider inset />
+                      <v-list-item>
+                        <template #prepend><v-icon>mdi-cash</v-icon></template>
+                        <v-list-item-title>Pricing</v-list-item-title>
+                        <template #append>
+                          <v-chip :color="event.isFreeEvent ? 'success' : 'warning'" size="small">
+                            {{ event.isFreeEvent ? 'Free' : `Paid (${event?.billing?.currency || 'USD'})` }}
+                          </v-chip>
+                        </template>
+                      </v-list-item>
+                      <v-divider inset />
+                      <v-list-item>
+                        <template #prepend><v-icon>mdi-chart-timeline-variant</v-icon></template>
+                        <v-list-item-title>Billing Status</v-list-item-title>
+                        <template #append>
+                          <v-chip :color="billingStatusColor" size="small">
+                            {{ event?.billing?.status || 'N/A' }}
+                          </v-chip>
+                        </template>
+                      </v-list-item>
+                      <v-divider inset />
+                      <v-list-item>
+                        <template #prepend><v-icon>mdi-account-multiple</v-icon></template>
+                        <v-list-item-title>Participants</v-list-item-title>
+                        <template #append>
+                          <v-chip color="info" size="small">{{ event?.participants?.length || 0 }} registered</v-chip>
+                        </template>
+                      </v-list-item>
+                    </v-list>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Facilitators -->
+                <v-card v-if="event.facilitators?.length" class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-school</v-icon>
+                    Facilitators
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-0">
+                    <v-list>
+                      <v-list-item v-for="facilitator in event.facilitators" :key="facilitator.name">
+                        <template #prepend>
+                          <v-avatar size="36" color="primary-lighten-4">
+                            <v-icon color="primary">mdi-account-tie</v-icon>
+                          </v-avatar>
+                        </template>
+                        <v-list-item-title>{{ facilitator.name }}</v-list-item-title>
+                        <v-list-item-subtitle>{{ facilitator.role }}</v-list-item-subtitle>
+                      </v-list-item>
+                    </v-list>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Admins -->
+                <v-card v-if="event.admins?.length" class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-shield-account</v-icon>
+                    Event Admins
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-0">
+                    <v-list>
+                      <v-list-item v-for="admin in event.admins" :key="admin.name">
+                        <template #prepend>
+                          <v-avatar size="36" color="grey-lighten-3">
+                            <v-icon color="grey">mdi-account-cog</v-icon>
+                          </v-avatar>
+                        </template>
+                        <v-list-item-title>{{ admin.name }}</v-list-item-title>
+                        <v-list-item-subtitle>{{ admin.role }}</v-list-item-subtitle>
+                      </v-list-item>
+                    </v-list>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Categories & Tags -->
+                <v-card class="mb-6" variant="outlined" rounded="lg">
+                  <v-card-title class="text-h6 font-weight-bold pa-4 pb-2">
+                    <v-icon start class="mr-2">mdi-tag-multiple</v-icon>
+                    Categories & Tags
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="pa-4">
+                    <div v-if="event.categories?.length" class="mb-3">
+                      <div class="text-caption text-grey mb-2">Categories</div>
+                      <div class="d-flex flex-wrap ga-2">
+                        <v-chip v-for="category in event.categories" :key="category" color="primary" size="small">
+                          {{ category }}
+                        </v-chip>
+                      </div>
+                    </div>
+                    <div v-if="event.tags?.length">
+                      <div class="text-caption text-grey mb-2">Tags</div>
+                      <div class="d-flex flex-wrap ga-2">
+                        <v-chip v-for="tag in event.tags" :key="tag" color="secondary" variant="tonal" size="small">
+                          #{{ tag }}
+                        </v-chip>
+                      </div>
+                    </div>
+                    <div v-if="!event.categories?.length && !event.tags?.length" class="text-grey text-center py-2">
+                      No categories or tags
+                    </div>
+                  </v-card-text>
+                </v-card>
+
+                <!-- Action Buttons -->
+                <v-card class="mb-6" elevation="2" rounded="lg">
+                  <v-card-text class="pa-4">
+                    <v-alert
+                      v-if="eventStore.registrationStatus === 'success'"
+                      type="success"
+                      variant="tonal"
+                      class="mb-3"
+                      closable
+                      @click:close="eventStore.clearRegistrationStatus"
+                    >
+                      Successfully registered for this event!
+                    </v-alert>
+
+                    <v-alert
+                      v-if="eventStore.registrationStatus === 'error'"
+                      type="error"
+                      variant="tonal"
+                      class="mb-3"
+                      closable
+                      @click:close="eventStore.clearRegistrationStatus"
+                    >
+                      Registration failed. Please try again.
+                    </v-alert>
+
+                    <v-alert
+                      v-if="eventStore.calendarAdded"
+                      type="info"
+                      variant="tonal"
+                      class="mb-3"
+                      closable
+                      @click:close="eventStore.clearCalendarAdded"
+                    >
+                      Event added to your calendar!
+                    </v-alert>
+
+                    <v-btn
+                      block
+                      color="primary"
+                      size="large"
+                      class="mb-3"
+                      :loading="eventStore.registrationStatus === 'loading'"
+                      @click="eventStore.registerForEvent"
+                      :disabled="temporalStatus.type === 'past'"
+                    >
+                      <v-icon start>mdi-account-plus</v-icon>
+                      {{ temporalStatus.type === 'past' ? 'Event Ended' : 'Register for Event' }}
                     </v-btn>
-                  </v-list-item-action>
-                </v-list-item>
-              </v-list>
-            </v-card-text>
-          </v-card>
-        </v-col>
-      </v-row>
+
+                    <v-btn
+                      block
+                      variant="outlined"
+                      color="primary"
+                      @click="eventStore.addToCalendar"
+                      :disabled="temporalStatus.type === 'past'"
+                    >
+                      <v-icon start>mdi-calendar-plus</v-icon>
+                      Add to Calendar
+                    </v-btn>
+                  </v-card-text>
+                </v-card>
+
+              </v-col>
+
+            </v-row>
+          </v-container>
+
+        </template>
+
+      </v-card>
     </v-container>
-  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useEventStore } from '@/stores/event'
 
-import { useEventStore } from "@/stores/event";
-import { useUserStore } from "@/stores/user";
-import type { Event, User } from "@/stores/event";
-import EventHeader from "./common/EventHeader.vue";
+const props = defineProps<{
+  eventId?: string
+  eventData?: any
+}>()
 
-// GraphQL mutations for chat, Q&A, and polls would be added here
-// import { gql } from '@apollo/client/core'
-// import { apolloClient } from '@/plugins/apollo'
+const eventStore = useEventStore()
+const now = ref(new Date())
+let countdownInterval: ReturnType<typeof setInterval> | null = null
 
-// Props with TypeScript
-interface Props {
-  event: Event;
-  userRole: string;
-  currentUser: User | null;
-}
+// Computed for easy access
+const event = computed(() => eventStore.currentEvent)
 
-const props = defineProps<Props>();
+const heroStyle = computed(() => {
+  const color = event.value?.branding?.themeColor || '#1772ca'
+  const banner = event.value?.branding?.bannerBg || ''
+  const gradient = `linear-gradient(135deg, ${color}cc, ${color}99)`
 
-// Emits
-const emit = defineEmits<{
-  (e: "refresh"): void;
-  (e: "updateEvent", event: Event): void;
-  (e: "sendMessage", message: ChatMessage): void;
-  (e: "askQuestion", question: QnAItem): void;
-}>();
-
-// Types
-interface ChatMessage {
-  id: number;
-  userName: string;
-  content: string;
-  timestamp: Date;
-}
-
-interface QnAItem {
-  id: number;
-  question: string;
-  answer: string | null;
-  userName?: string;
-}
-
-interface Poll {
-  id: string;
-  question: string;
-  options: string[];
-  expiresAt?: Date;
-}
-
-interface Resource {
-  id: number;
-  title: string;
-  description: string;
-  icon: string;
-  url?: string;
-}
-
-// Store instances
-const eventStore = useEventStore();
-const authStore = useUserStore();
-
-// Refs
-const chatMessages = ref<ChatMessage[]>([]);
-const newMessage = ref("");
-const qaList = ref<QnAItem[]>([]);
-const newQuestion = ref("");
-const activePoll = ref<Poll | null>(null);
-const pollResponse = ref("");
-const chatMessagesRef = ref<HTMLDivElement | null>(null);
-
-// Sample resources - in production, these would come from GraphQL
-const resources = ref<Resource[]>([
-  {
-    id: 1,
-    title: "Workshop Slides",
-    description: "Presentation slides",
-    icon: "mdi-file-powerpoint",
-  },
-  {
-    id: 2,
-    title: "Resource Guide",
-    description: "Additional materials",
-    icon: "mdi-file-pdf",
-  },
-]);
-
-// Computed
-const isChatEnabled = () => props.event.interactivity?.allowChat ?? false;
-const isQnAEnabled = () => props.event.interactivity?.allowQnA ?? false;
-const isPollsEnabled = () => props.event.interactivity?.allowPolls ?? false;
-
+  return {
+    backgroundImage: banner ? `url(${banner}), ${gradient}` : gradient,
+    backgroundSize: banner ? 'cover' : 'auto',
+    backgroundPosition: 'center',
+    backgroundBlend: 'overlay'
+  }
+})
 // Methods
-const formatTime = (timestamp: Date | string) => {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
-
-const sendMessage = async () => {
-  if (!newMessage.value.trim()) return;
-
-  const message: ChatMessage = {
-    id: Date.now(),
-    userName: props.currentUser?.name || "Anonymous",
-    content: newMessage.value,
-    timestamp: new Date(),
-  };
-
-  chatMessages.value.push(message);
-  emit("sendMessage", message);
-
-  // Optional: Send to GraphQL mutation
-  // await sendChatMessage({
-  //   eventId: props.event.id,
-  //   content: newMessage.value,
-  //   userId: props.currentUser?.id
-  // })
-
-  newMessage.value = "";
-
-  // Scroll to bottom
-  await nextTick();
-  if (chatMessagesRef.value) {
-    chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight;
+const handleDialogClose = (dialogName) => {
+  dialogStore.handleDialogClose(dialogName)
+}
+// Temporal Status (Upcoming, Live, Past)
+const temporalStatus = computed(() => {
+  if (!event.value?.dateTime?.start || !event.value?.dateTime?.end) {
+    return { type: 'unknown', label: 'Status Unknown', color: 'grey', icon: 'mdi-help-circle' }
   }
-};
-
-const askQuestion = async () => {
-  if (!newQuestion.value.trim()) return;
-
-  const question: QnAItem = {
-    id: Date.now(),
-    question: newQuestion.value,
-    answer: null,
-    userName: props.currentUser?.name,
-  };
-
-  qaList.value.push(question);
-  emit("askQuestion", question);
-
-  // Optional: Send to GraphQL mutation
-  // await askQuestionMutation({
-  //   eventId: props.event.id,
-  //   question: newQuestion.value,
-  //   userId: props.currentUser?.id
-  // })
-
-  newQuestion.value = "";
-};
-
-const submitPollResponse = async () => {
-  if (!pollResponse.value || !activePoll.value) return;
-
-  console.log("Poll response submitted:", {
-    pollId: activePoll.value.id,
-    response: pollResponse.value,
-    userId: props.currentUser?.id,
-  });
-
-  // Optional: Send to GraphQL mutation
-  // await submitPollResponseMutation({
-  //   pollId: activePoll.value.id,
-  //   response: pollResponse.value,
-  //   userId: props.currentUser?.id
-  // })
-
-  // Clear active poll after submission
-  activePoll.value = null;
-  pollResponse.value = "";
-};
-
-const downloadResource = (resource: Resource) => {
-  console.log("Downloading resource:", resource.title);
-  // Implement actual download logic
-  if (resource.url) {
-    window.open(resource.url, "_blank");
-  }
-};
-
-// Poll subscription (example - would use GraphQL subscriptions in production)
-const subscribeToPolls = () => {
-  // This would be implemented with GraphQL subscriptions
-  // For now, simulate with a timeout
-  setTimeout(() => {
-    // Simulate a poll being pushed
-    activePoll.value = {
-      id: "poll-1",
-      question: "How would you rate this session?",
-      options: ["Excellent", "Good", "Average", "Poor"],
-    };
-  }, 10000);
-};
-
-// Chat subscription (example)
-const subscribeToChat = () => {
-  // This would use GraphQL subscriptions
-  // For now, simulate receiving messages
-  const interval = setInterval(() => {
-    if (Math.random() > 0.7) {
-      // Randomly add messages
-      const dummyMessages = [
-        "Great session!",
-        "Can you share the slides?",
-        "Very informative",
-        "Thank you for this session",
-      ];
-      const randomMessage =
-        dummyMessages[Math.floor(Math.random() * dummyMessages.length)];
-
-      chatMessages.value.push({
-        id: Date.now(),
-        userName: "Other Participant",
-        content: randomMessage,
-        timestamp: new Date(),
-      });
-
-      // Scroll to bottom
-      nextTick(() => {
-        if (chatMessagesRef.value) {
-          chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight;
-        }
-      });
-    }
-  }, 15000);
-
-  return interval;
-};
-
-// Q&A subscription
-const subscribeToQnA = () => {
-  // This would use GraphQL subscriptions to get answers to questions
-  setInterval(() => {
-    const unansweredQuestions = qaList.value.filter((q) => !q.answer);
-    if (unansweredQuestions.length > 0 && Math.random() > 0.8) {
-      const randomQuestion = unansweredQuestions[0];
-      randomQuestion.answer =
-        "Thank you for your question. We will address it shortly.";
-
-      // Update the question in the list
-      const index = qaList.value.findIndex((q) => q.id === randomQuestion.id);
-      if (index !== -1) {
-        qaList.value[index] = { ...randomQuestion };
+  
+  const nowDate = now.value
+  const startDate = new Date(event.value.dateTime.start)
+  const endDate = new Date(event.value.dateTime.end)
+  
+  if (nowDate < startDate) {
+    const diffMs = startDate.getTime() - nowDate.getTime()
+    const diffDays = diffMs / (1000 * 60 * 60 * 24)
+    const diffHours = diffMs / (1000 * 60 * 60)
+    
+    if (diffHours < 1) {
+      const minutes = Math.floor(diffMs / (1000 * 60))
+      return { 
+        type: 'upcoming', 
+        label: `Starts in ${minutes} minute${minutes !== 1 ? 's' : ''}`, 
+        color: 'warning',
+        icon: 'mdi-timer-sand'
+      }
+    } else if (diffHours < 24) {
+      const hours = Math.floor(diffHours)
+      return { 
+        type: 'upcoming', 
+        label: `Starts in ${hours} hour${hours !== 1 ? 's' : ''}`, 
+        color: 'warning',
+        icon: 'mdi-clock-alert'
+      }
+    } else if (diffDays < 7) {
+      return { 
+        type: 'upcoming', 
+        label: `Starts in ${Math.floor(diffDays)} day${Math.floor(diffDays) !== 1 ? 's' : ''}`, 
+        color: 'info',
+        icon: 'mdi-calendar-clock'
+      }
+    } else if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7)
+      return { 
+        type: 'upcoming', 
+        label: `Starts in ${weeks} week${weeks !== 1 ? 's' : ''}`, 
+        color: 'info',
+        icon: 'mdi-calendar-week'
+      }
+    } else {
+      const months = Math.floor(diffDays / 30)
+      return { 
+        type: 'upcoming', 
+        label: `Starts in ${months} month${months !== 1 ? 's' : ''}`, 
+        color: 'secondary',
+        icon: 'mdi-calendar-month'
       }
     }
-  }, 20000);
-};
+  } else if (nowDate >= startDate && nowDate <= endDate) {
+    const diffMs = endDate.getTime() - nowDate.getTime()
+    const hoursLeft = Math.floor(diffMs / (1000 * 60 * 60))
+    const minsLeft = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+    
+    if (hoursLeft === 0 && minsLeft > 0) {
+      return { 
+        type: 'live', 
+        label: `Live • ${minsLeft} min${minsLeft !== 1 ? 's' : ''} left`, 
+        color: 'error',
+        icon: 'mdi-record-rec'
+      }
+    } else if (hoursLeft > 0) {
+      return { 
+        type: 'live', 
+        label: `Live • ${hoursLeft} hr${hoursLeft !== 1 ? 's' : ''} left`, 
+        color: 'error',
+        icon: 'mdi-record-rec'
+      }
+    }
+    return { 
+      type: 'live', 
+      label: 'Live Now', 
+      color: 'error',
+      icon: 'mdi-record-rec'
+    }
+  } else {
+    const diffMs = nowDate.getTime() - endDate.getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    if (diffDays < 1) {
+      return { type: 'past', label: 'Ended today', color: 'grey', icon: 'mdi-check-decagram' }
+    } else if (diffDays === 1) {
+      return { type: 'past', label: 'Ended yesterday', color: 'grey', icon: 'mdi-check-decagram' }
+    }
+    return { type: 'past', label: `Ended ${diffDays} days ago`, color: 'grey', icon: 'mdi-check-decagram' }
+  }
+})
+
+// Countdown timer values
+const countdown = computed(() => {
+  if (!event.value?.dateTime?.start || temporalStatus.value.type !== 'upcoming') {
+    return { days: 0, hours: 0, minutes: 0 }
+  }
+  
+  const nowDate = now.value
+  const startDate = new Date(event.value.dateTime.start)
+  const diffMs = startDate.getTime() - nowDate.getTime()
+  
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+  
+  return { days, hours, minutes }
+})
+
+// Status colors
+const statusColor = computed(() => {
+  const status = event.value?.status?.toUpperCase()
+  switch (status) {
+    case 'PUBLISHED': return 'success'
+    case 'DRAFT': return 'warning'
+    case 'CANCELLED': return 'error'
+    case 'COMPLETED': return 'info'
+    default: return 'primary'
+  }
+})
+
+const eventTypeColor = computed(() => {
+  const type = event.value?.eventType?.toUpperCase()
+  switch (type) {
+    case 'TRAINING': return 'primary'
+    case 'WORKSHOP': return 'secondary'
+    case 'SEMINAR': return 'info'
+    case 'CONFERENCE': return 'warning'
+    default: return 'grey'
+  }
+})
+
+const billingStatusColor = computed(() => {
+  const status = event.value?.billing?.status?.toUpperCase()
+  switch (status) {
+    case 'PAID': return 'success'
+    case 'PENDING': return 'warning'
+    case 'FAILED': return 'error'
+    default: return 'info'
+  }
+})
+
+// Date formatting
+const formattedStartDate = computed(() => {
+  if (!event.value?.dateTime?.start) return ''
+  const date = new Date(event.value.dateTime.start)
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+})
+
+const formattedStartTime = computed(() => {
+  if (!event.value?.dateTime?.start) return ''
+  const date = new Date(event.value.dateTime.start)
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  })
+})
+
+const formattedEndDate = computed(() => {
+  if (!event.value?.dateTime?.end) return ''
+  const date = new Date(event.value.dateTime.end)
+  const startDate = event.value.dateTime.start ? new Date(event.value.dateTime.start) : null
+  if (startDate && date.toDateString() === startDate.toDateString()) {
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+})
+
+const formattedEndTime = computed(() => {
+  if (!event.value?.dateTime?.end) return ''
+  const date = new Date(event.value.dateTime.end)
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  })
+})
+
+// Duration formatting
+const durationFormatted = computed(() => {
+  if (event.value?.eventDuration) {
+    const dur = event.value.eventDuration
+    if (dur.hours >= 1) {
+      const mins = dur.minutes % 60
+      return mins > 0 ? `${dur.hours} hr ${mins} min` : `${dur.hours} hr`
+    }
+    return `${dur.minutes} min`
+  }
+  if (event.value?.dateTime?.start && event.value?.dateTime?.end) {
+    const start = new Date(event.value.dateTime.start)
+    const end = new Date(event.value.dateTime.end)
+    const diffMs = end.getTime() - start.getTime()
+    const diffHrs = diffMs / (1000 * 60 * 60)
+    if (diffHrs >= 1) {
+      const hrs = Math.floor(diffHrs)
+      const mins = Math.round((diffHrs - hrs) * 60)
+      return mins > 0 ? `${hrs} hr ${mins} min` : `${hrs} hr`
+    }
+    const mins = Math.round(diffMs / (1000 * 60))
+    return `${mins} min`
+  }
+  return 'N/A'
+})
+
+// Interactivity features
+const interactivityFeatures = computed(() => {
+  const interactivity = event.value?.interactivity || {}
+  return [
+    { key: 'chat', label: 'Live Chat', enabled: interactivity.allowChat ?? true },
+    { key: 'privateMessages', label: 'Private Messages', enabled: interactivity.allowPrivateMessages ?? false },
+    { key: 'polls', label: 'Live Polls', enabled: interactivity.allowPolls ?? true },
+    { key: 'qnA', label: 'Q&A Session', enabled: interactivity.allowQnA ?? true },
+    { key: 'feedback', label: 'Feedback', enabled: interactivity.allowFeedback ?? true },
+    { key: 'screenSharing', label: 'Screen Sharing', enabled: interactivity.allowScreenSharing ?? false },
+    { key: 'breakoutRooms', label: 'Breakout Rooms', enabled: interactivity.allowBreakoutRooms ?? false },
+    { key: 'whiteboard', label: 'Whiteboard', enabled: interactivity.allowWhiteboard ?? false },
+    { key: 'reactions', label: 'Live Reactions', enabled: interactivity.liveReactions ?? true },
+    { key: 'raiseHand', label: 'Raise Hand', enabled: interactivity.raiseHandFeature ?? true }
+  ]
+})
+
+// Methods
+const retryLoad = () => {
+  if (props.eventId) {
+    eventStore.fetchEvent(props.eventId)
+  }
+}
+
+const openVirtualLink = () => {
+  if (event.value?.location?.virtualLink) {
+    window.open(event.value.location.virtualLink, '_blank')
+  }
+}
+
+// Start countdown timer (updates every minute)
+const startCountdownTimer = () => {
+  if (countdownInterval) clearInterval(countdownInterval)
+  countdownInterval = setInterval(() => {
+    now.value = new Date()
+  }, 60000)
+}
 
 // Lifecycle
-let chatInterval: ReturnType<typeof setInterval> | null = null;
-let qaInterval: ReturnType<typeof setInterval> | null = null;
-
 onMounted(() => {
-  console.log("Participant view mounted for event:", props.event.id);
-
-  // Subscribe to real-time features if enabled
-  if (isChatEnabled()) {
-    chatInterval = subscribeToChat();
-  }
-
-  if (isQnAEnabled()) {
-    qaInterval = subscribeToQnA();
-  }
-
-  if (isPollsEnabled()) {
-    subscribeToPolls();
-  }
-});
+  // if (props.eventData) {
+  //   eventStore.currentEvent(props.eventData)
+  // } else if (props.eventId) {
+  //   eventStore.fetchEvent(props.eventId)
+  // }
+  startCountdownTimer()
+})
 
 onUnmounted(() => {
-  // Cleanup subscriptions
-  if (chatInterval) {
-    clearInterval(chatInterval);
+  if (countdownInterval) {
+    clearInterval(countdownInterval)
   }
-  if (qaInterval) {
-    clearInterval(qaInterval);
-  }
-});
+})
 </script>
 
 <style scoped>
-.event-participant {
+.event-viewer {
   min-height: 100vh;
-  background: #f5f5f5;
-  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #eef2f5 100%);
 }
 
-.video-placeholder {
-  background: #e0e0e0;
-  border-radius: 8px;
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.chat-container {
-  display: flex;
-  flex-direction: column;
-  height: 400px;
-}
-
-.chat-messages {
-  flex: 1;
+.main-card {
   overflow-y: auto;
-  margin-bottom: 16px;
-  padding: 8px;
+  overflow-x: hidden;
+  border-radius: 8px !important;
+  height: auto;
+  max-height: 84vh;
+  scrollbar-width: thin; /* For Firefox - optional */
 }
 
-.chat-message {
-  padding: 8px;
-  border-bottom: 1px solid #eee;
+/* For WebKit browsers (Chrome, Safari, Edge) - optional */
+.main-card::-webkit-scrollbar {
+  width: 8px;
 }
 
-.chat-message strong {
-  color: #1976d2;
-}
-
-/* Scrollbar styling */
-.chat-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chat-messages::-webkit-scrollbar-track {
+.main-card::-webkit-scrollbar-track {
   background: #f1f1f1;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
-.chat-messages::-webkit-scrollbar-thumb {
+.main-card::-webkit-scrollbar-thumb {
   background: #888;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
-.chat-messages::-webkit-scrollbar-thumb:hover {
+.main-card::-webkit-scrollbar-thumb:hover {
   background: #555;
+}
+.hero-section {
+  min-height: 280px;
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+}
+
+.hero-content {
+  padding: 32px 40px;
+  width: 100%;
+}
+
+.hero-logo {
+  background: white;
+  padding: 8px;
+  border: 2px solid white;
+}
+
+.hero-text {
+  max-width: 600px;
+}
+
+.countdown-timer {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.countdown-block {
+  text-align: center;
+  min-width: 60px;
+}
+
+.countdown-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1772ca;
+  display: block;
+  line-height: 1.2;
+}
+
+.countdown-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+.leading-relaxed {
+  line-height: 1.7;
+}
+
+.font-mono {
+  font-family: 'Roboto Mono', monospace;
+  letter-spacing: 0.5px;
 }
 </style>

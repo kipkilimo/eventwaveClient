@@ -185,9 +185,9 @@ onMounted(async () => {
       <p class="text-body-1 text-center mb-4">
         {{ errorMessage || "Your session is invalid or has expired." }}
       </p>
-      <v-btn color="primary" class="mt-2" @click="showPlanSelector">
-        <v-icon start>mdi-plus-circle-outline</v-icon>
-        Create a free event
+      <v-btn color="info" to="/register" class="mt-2" @click="showPlanSelector">
+        <v-icon start>mdi-information-slab-circle-outline</v-icon>
+        Create an account for better experience
       </v-btn>
     </div>
 

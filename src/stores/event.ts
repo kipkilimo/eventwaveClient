@@ -887,12 +887,16 @@ export interface Event {
     id: string;
     name: string;
   };
+  branding?: {
+    logoUrl: string;
+    bannerBg: string;
+    themeColor: string;
+  };
   participants: Participant[];
   facilitators?: Facilitator[];
   admins?: Admin[];
   capacity?: number;
   interactivity?: InteractivitySettings;
-  branding?: BrandingSettings;
   isFreeEvent: boolean;
   isShortEvent?: boolean;
   eventDuration?: EventDuration;
@@ -992,6 +996,7 @@ export const useEventStore = defineStore("events", {
     loading: false,
     error: null as string | null,
     paginationLoading: false,
+    orgEvents: [] as Event[],
 
     // Real-time data (will be updated via WebSocket handlers)
     chatMessages: [] as ChatMessage[],

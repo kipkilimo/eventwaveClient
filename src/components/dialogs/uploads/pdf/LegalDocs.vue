@@ -12,13 +12,13 @@
       </v-icon>
       PDF Document Upload for {{ orgName }}({{ organizationId }})
     </v-card-title>
-
+<v-divider/>
     <v-card-text class="text-medium-emphasis">
       Required: Signed Attestation of Support and Terms & Conditions as a single
       PDF file (max {{ maxSizeMB }} MB).
     </v-card-text>
-
-    <v-divider class="my-4" />
+<!-- 
+    <v-divider class="my-4" /> -->
 
     <!-- FILE INPUT -->
     <v-file-input

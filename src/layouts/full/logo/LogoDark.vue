@@ -25,7 +25,8 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import logoImage from '@/assets/images/logos/eventwave.png';
+// import logoImage from '@/assets/images/logos/eventwave.png';
+const logoImage = 'https://a2z-v0.s3.eu-central-1.amazonaws.com/countysquare-4-3-21.png';
 
 // Responsive logo sizing
 const isMobile = ref(false);
@@ -34,7 +35,7 @@ const checkMobile = () => {
   isMobile.value = window.innerWidth < 768;
 };
 
-const logoWidth = computed(() => isMobile.value ? '6rem' : '10.5rem');
+const logoWidth = computed(() => isMobile.value ? '6rem' : '13.5rem');
 const logoHeight = computed(() => isMobile.value ? '3rem' : '4.5rem');
 
 onMounted(() => {

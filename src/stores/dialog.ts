@@ -12,6 +12,7 @@ export const DIALOG_NAMES = {
   CREATE_ORGANIZATION: "organizationCreateDialog",
   EDIT_EVENT: "eventEditDialog",
   EVENT_DETAILS: "eventDetailsDialog",
+  EVENT_CANCEL: "eventCancelDialog",
   CONFIRM_DELETE: "confirmDeleteDialog",
   VOUCHER: "voucherDialog",
   PAYMENT: "paymentDialog",
@@ -26,10 +27,17 @@ export const DIALOG_NAMES = {
 export type DialogName = (typeof DIALOG_NAMES)[keyof typeof DIALOG_NAMES];
 
 export const useDialogStore = defineStore("dialog", {
-  state: (): DialogState => ({
+  state: (): DialogState & {
+    editingEvent: any | null;
+    viewingEvent: any | null;
+    deletingEvent: any | null;
+  } => ({
     name: null,
     visible: false,
     payload: null,
+    editingEvent: null,
+    viewingEvent: null,
+    deletingEvent: null,
   }),
 
   getters: {
@@ -73,6 +81,22 @@ export const useDialogStore = defineStore("dialog", {
         if (!name) return;
         this.open(name, payload);
       }
+    },
+
+    // =========================
+    // EVENT MANAGEMENT STATE METHODS
+    // =========================
+
+    setEditingEvent(event: any | null) {
+      this.editingEvent = event;
+    },
+
+    setViewingEvent(event: any | null) {
+      this.viewingEvent = event;
+    },
+
+    setDeletingEvent(event: any | null) {
+      this.deletingEvent = event;
     },
 
     // =========================
@@ -184,21 +208,23 @@ export const useDialogStore = defineStore("dialog", {
     closeVoucher() {
       this.close(DIALOG_NAMES.VOUCHER);
     },
+
     handleDialogClose(dialogName: DialogName | string) {
       this.close(dialogName);
 
       if (dialogName === DIALOG_NAMES.EVENT_FORM) {
-        // optionally clear external eventStore here if injected via composable layer
+        this.setEditingEvent(null);
       }
 
       if (dialogName === DIALOG_NAMES.EVENT_VIEW) {
-        // same idea: keep UI state cleanup here if desired
+        this.setViewingEvent(null);
       }
 
       if (dialogName === DIALOG_NAMES.EVENT_DELETE) {
-        // same idea
+        this.setDeletingEvent(null);
       }
     },
+
     closePayment() {
       this.close(DIALOG_NAMES.PAYMENT);
     },
